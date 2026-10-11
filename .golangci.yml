@@ -1,0 +1,20 @@
+version: "2"
+
+linters:
+  # "standard" = errcheck, govet, ineffassign, staticcheck, unused.
+  default: standard
+  enable:
+    - gosec        # security: missing timeouts, weak crypto, unsafe file perms
+    - bodyclose    # HTTP response bodies must be closed
+    - errorlint    # compare wrapped errors with errors.Is/As, not ==
+    - noctx        # outgoing HTTP requests must carry a context
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      # Keep this repo's imports in their own group after third-party ones.
+      local-prefixes:
+        - enclave

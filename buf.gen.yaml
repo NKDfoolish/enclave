@@ -1,0 +1,17 @@
+version: v2
+clean: true
+plugins:
+  # Go: shared by api, gateway and mcp (single Go module at the repo root).
+  - remote: buf.build/protocolbuffers/go:v1.36.6
+    out: gen/go
+    opt: paths=source_relative
+  - remote: buf.build/grpc/go:v1.5.1
+    out: gen/go
+    opt: paths=source_relative
+  # Python: generated into the rag service. Runtime versions in rag/pyproject.toml must be >= these.
+  - remote: buf.build/protocolbuffers/python:v31.1
+    out: rag/gen
+  - remote: buf.build/protocolbuffers/pyi:v31.1
+    out: rag/gen
+  - remote: buf.build/grpc/python:v1.73.1
+    out: rag/gen

@@ -1,0 +1,24 @@
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+
+# Env
+.env
+
+# Go
+/bin/
+*.test
+coverage.out
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*

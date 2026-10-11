@@ -1,0 +1,32 @@
+[project]
+name = "enclave-rag"
+version = "0.1.0"
+description = "Enclave RAG service: permission-filtered retrieval and Q&A"
+requires-python = ">=3.13"
+dependencies = [
+    # Must be >= the plugin versions in buf.gen.yaml.
+    "grpcio>=1.73.1",
+    "protobuf>=6.31.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4",
+    "ruff>=0.12",
+]
+
+[tool.uv]
+# Run as an application, not an installable package; imports resolve via pythonpath below.
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "gen"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = ["gen"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package enclave.rag.v1;
+
+option go_package = "enclave/gen/go/enclave/rag/v1;ragv1";
+
+// RagService answers questions from permitted workspace documents.
+// Part 0 only exposes Ping to prove the Go -> Python gRPC path works.
+service RagService {
+  rpc Ping(PingRequest) returns (PingResponse);
+}
+
+message PingRequest {
+  string message = 1;
+}
+
+message PingResponse {
+  // Echo of the request message.
+  string message = 1;
+  // Name of the service that answered, e.g. "rag".
+  string service = 2;
+}
