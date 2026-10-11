@@ -42,6 +42,12 @@ func run(logger *slog.Logger) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// After the first signal, restore default signal handling so a second Ctrl+C
+	// kills the process immediately instead of waiting for graceful shutdown.
+	go func() {
+		<-ctx.Done()
+		stop()
+	}()
 
 	handler := routes(cfg, logger, rag)
 	return httpserver.Run(ctx, logger, cfg.HTTPAddr, handler, cfg.ShutdownTimeout)
