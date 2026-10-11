@@ -16,22 +16,30 @@ jobs:
   proto:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: bufbuild/buf-action@v1
         with:
           setup_only: true
       - run: buf lint
-      # Generated code is committed; fail if someone changed a .proto without regenerating.
-      - run: buf generate && git diff --exit-code -- gen rag/gen
+      - run: buf generate
+      # Generated code is committed; fail if a .proto changed without regenerating.
+      # `git status` also catches new files, which `git diff` would miss.
+      - name: Check generated code is up to date
+        run: |
+          if [ -n "$(git status --porcelain -- gen rag/gen)" ]; then
+            git status --porcelain -- gen rag/gen
+            echo "Generated code is stale: run 'make proto' and commit the result." >&2
+            exit 1
+          fi
 
   go:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - uses: golangci/golangci-lint-action@v8
+      - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.5.0
       - run: go test -race ./...
@@ -42,8 +50,8 @@ jobs:
       run:
         working-directory: rag
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run ruff format --check .
@@ -53,10 +61,10 @@ jobs:
     needs: [go, python]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: cd rag && uv sync --locked
       - run: ./scripts/smoke.sh
