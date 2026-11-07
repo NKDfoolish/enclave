@@ -21,15 +21,17 @@ Use option 2.
 ```text
 api/internal/
 ├── <context>/            e.g. identity, workspace, document
-│   ├── domain/           entities, value objects, domain errors, repository interfaces
-│   ├── app/              use cases; depends only on domain
-│   ├── infra/            Postgres etc.; implements domain interfaces
+│   ├── domain/           entities, value objects, business rules, domain errors
+│   ├── app/              use cases + the Repository interface they consume
+│   ├── infra/            Postgres etc.; implements app's Repository
 │   └── transport/        HTTP handlers; read request -> call app -> write response
 └── platform/             shared plumbing with no business rules
     ├── config/  httpserver/  diagnostics/  ragclient/
 ```
 
-Dependency rule: `transport -> app -> domain <- infra`. `domain` imports nothing from other layers.
+Dependency rule: `transport -> app -> domain <- infra`. The `Repository` interface is declared in
+`app`, next to the code that consumes it (Go convention), and `infra` satisfies it implicitly; `app`
+never imports `infra`. `domain` imports nothing from other layers.
 `cmd/api` is the only place that wires concrete implementations together.
 
 HTTP uses `net/http` with hand-written middleware (`platform/httpserver`) instead of a framework.

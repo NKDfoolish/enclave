@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Enclave</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Enclave</h1>
+    <div id="session-bar" hidden>
+      <span id="session-email"></span>
+      <button id="logout-button" type="button">Log out</button>
+    </div>
+  </header>
+
+  <main>
+    <p id="notice" role="status" hidden></p>
+
+    <section id="auth-view" hidden>
+      <form id="login-form">
+        <h2>Log in</h2>
+        <label>Email <input name="email" type="email" autocomplete="username" required></label>
+        <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+        <button type="submit">Log in</button>
+      </form>
+      <form id="register-form">
+        <h2>Create an account</h2>
+        <label>Name <input name="display_name" autocomplete="name" required></label>
+        <label>Email <input name="email" type="email" autocomplete="email" required></label>
+        <label>Password <input name="password" type="password" autocomplete="new-password" minlength="10" required></label>
+        <button type="submit">Create account</button>
+      </form>
+    </section>
+
+    <section id="accept-view" hidden>
+      <h2>Join a workspace</h2>
+      <p>You have been invited to a workspace. Accept with the account the invitation was sent to.</p>
+      <button id="accept-button" type="button">Accept invitation</button>
+      <button id="decline-button" type="button" class="secondary">Not now</button>
+    </section>
+
+    <section id="workspaces-view" hidden>
+      <h2>Your workspaces</h2>
+      <ul id="workspace-list" class="list"></ul>
+      <form id="create-workspace-form" class="inline">
+        <label>New workspace <input name="name" maxlength="100" required></label>
+        <button type="submit">Create</button>
+      </form>
+    </section>
+
+    <section id="workspace-view" hidden>
+      <button id="back-button" type="button" class="secondary">← All workspaces</button>
+      <h2 id="workspace-title"></h2>
+      <p>Your role: <strong id="workspace-role"></strong></p>
+
+      <div id="members-panel" hidden>
+        <h3>Members</h3>
+        <table>
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th></th></tr></thead>
+          <tbody id="member-rows"></tbody>
+        </table>
+      </div>
+
+      <div id="admin-panel" hidden>
+        <h3>Invite someone</h3>
+        <form id="invite-form" class="inline">
+          <label>Email <input name="email" type="email" required></label>
+          <label>Role
+            <select name="role">
+              <option value="staff">staff</option>
+              <option value="client">client</option>
+              <option value="admin">admin</option>
+            </select>
+          </label>
+          <button type="submit">Invite</button>
+        </form>
+        <p id="invite-link" hidden>
+          Share this link with the invitee (shown only once):<br>
+          <code id="invite-link-url"></code>
+        </p>
+
+        <h3>Pending invitations</h3>
+        <ul id="invitation-list" class="list"></ul>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

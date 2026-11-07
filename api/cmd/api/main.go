@@ -11,9 +11,15 @@ import (
 	"os/signal"
 	"syscall"
 
+	identityapp "enclave/api/internal/identity/app"
+	identityinfra "enclave/api/internal/identity/infra"
 	"enclave/api/internal/platform/config"
 	"enclave/api/internal/platform/httpserver"
+	"enclave/api/internal/platform/postgres"
 	"enclave/api/internal/platform/ragclient"
+	"enclave/api/internal/platform/redis"
+	workspaceapp "enclave/api/internal/workspace/app"
+	workspaceinfra "enclave/api/internal/workspace/infra"
 )
 
 func main() {
@@ -30,6 +36,22 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
+	pool, err := postgres.Connect(context.Background(), cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+
+	redisClient, err := redis.Connect(context.Background(), cfg.RedisURL)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := redisClient.Close(); err != nil {
+			logger.Warn("close redis client", "err", err)
+		}
+	}()
+
 	rag, err := ragclient.New(cfg.RAGAddr)
 	if err != nil {
 		return err
@@ -40,6 +62,20 @@ func run(logger *slog.Logger) error {
 		}
 	}()
 
+	svc := services{
+		identity: identityapp.NewService(
+			identityinfra.NewRepository(pool),
+			identityinfra.NewRevocationStore(redisClient),
+			identityapp.TokenConfig{
+				SigningKey: cfg.JWTSigningKey,
+				AccessTTL:  cfg.AccessTokenTTL,
+				RefreshTTL: cfg.RefreshTokenTTL,
+			},
+		),
+		workspace: workspaceapp.NewService(workspaceinfra.NewRepository(pool)),
+		rag:       rag,
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	// After the first signal, restore default signal handling so a second Ctrl+C
@@ -49,6 +85,6 @@ func run(logger *slog.Logger) error {
 		stop()
 	}()
 
-	handler := routes(cfg, logger, rag)
+	handler := routes(cfg, logger, svc)
 	return httpserver.Run(ctx, logger, cfg.HTTPAddr, handler, cfg.ShutdownTimeout)
 }
