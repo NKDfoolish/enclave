@@ -34,6 +34,28 @@ jobs:
 
   go:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_USER: enclave
+          POSTGRES_PASSWORD: enclave
+          POSTGRES_DB: enclave_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U enclave -d enclave_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://enclave:enclave@localhost:5432/enclave_test?sslmode=disable
+      TEST_REDIS_URL: redis://localhost:6379/15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -42,6 +64,8 @@ jobs:
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.5.0
+      - name: Migrate test database
+        run: go run github.com/pressly/goose/v3/cmd/goose@v3.26.0 -dir api/migrations postgres "$TEST_DATABASE_URL" up
       - run: go test -race ./...
 
   python:
@@ -60,6 +84,28 @@ jobs:
   smoke:
     needs: [go, python]
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_USER: enclave
+          POSTGRES_PASSWORD: enclave
+          POSTGRES_DB: enclave
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U enclave -d enclave"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgres://enclave:enclave@localhost:5432/enclave?sslmode=disable
+      REDIS_URL: redis://localhost:6379/0
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7

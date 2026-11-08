@@ -8,8 +8,15 @@ SHELL := /bin/bash
 export
 
 DATABASE_URL ?= postgres://enclave:enclave@localhost:5432/enclave?sslmode=disable
-# The binary defaults to false; local `make run-api` turns debug routes on.
+REDIS_URL ?= redis://localhost:6380/0
+TEST_DATABASE_URL ?= postgres://enclave:enclave@localhost:5432/enclave_test?sslmode=disable
+# Redis database 15 keeps test keys apart from local development data.
+TEST_REDIS_URL ?= redis://localhost:6380/15
+# DEVELOPMENT ONLY. Any deployed environment must set its own secret key.
+API_JWT_SIGNING_KEY ?= ArYMsSrgfvqvccx//yPDW/ciJ8b8YtFUSFHXVUEtXRQ=
+# The binary defaults are the safe ones; local `make run-api` over plain HTTP relaxes them.
 API_ENABLE_DEBUG_ROUTES ?= true
+API_SECURE_COOKIES ?= false
 
 # Some machines only have the standalone docker-compose binary.
 COMPOSE := $(shell docker compose version >/dev/null 2>&1 && echo "docker compose" || echo "docker-compose")
@@ -50,6 +57,13 @@ migrate-status: ## Show migration status
 migrate-new: ## Create a migration: make migrate-new name=create_workspaces
 	$(GOOSE) -dir $(MIGRATIONS_DIR) -s create $(name) sql
 
+.PHONY: test-db
+test-db: ## Create the enclave_test database if missing and migrate it
+	@$(COMPOSE) exec -T postgres psql -U enclave -d enclave -tAc \
+		"SELECT 1 FROM pg_database WHERE datname = 'enclave_test'" | grep -q 1 \
+		|| $(COMPOSE) exec -T postgres createdb -U enclave enclave_test
+	$(GOOSE) -dir $(MIGRATIONS_DIR) postgres "$(TEST_DATABASE_URL)" up
+
 ##@ Code
 .PHONY: proto setup lint fmt test smoke run-api run-rag
 proto: ## Lint protos and regenerate Go and Python code
@@ -68,7 +82,7 @@ fmt: ## Format Go and Python code
 	gofmt -w api gateway mcp
 	cd rag && uv run ruff check --fix . && uv run ruff format .
 
-test: ## Run Go and Python tests
+test: test-db ## Run Go and Python tests (Go integration tests use enclave_test)
 	go test -race ./...
 	cd rag && uv run pytest
 

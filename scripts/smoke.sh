@@ -5,6 +5,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 RAG_PORT="${RAG_PORT:-50051}"
 API_PORT="${API_PORT:-8080}"
+DATABASE_URL="${DATABASE_URL:-postgres://enclave:enclave@localhost:5432/enclave?sslmode=disable}"
+REDIS_URL="${REDIS_URL:-redis://localhost:6380/0}"
+# Throwaway key: the smoke test never needs tokens to outlive this run.
+API_JWT_SIGNING_KEY="${API_JWT_SIGNING_KEY:-$(openssl rand -base64 32)}"
 mkdir -p bin
 
 cleanup() {
@@ -18,7 +22,7 @@ PYTHONPATH=src:gen RAG_GRPC_LISTEN="127.0.0.1:${RAG_PORT}" uv run --quiet --dire
 RAG_PID=$!
 
 go build -o bin/api ./api/cmd/api
-API_ENABLE_DEBUG_ROUTES=true API_HTTP_ADDR="127.0.0.1:${API_PORT}" RAG_GRPC_ADDR="127.0.0.1:${RAG_PORT}" ./bin/api &
+DATABASE_URL="$DATABASE_URL" REDIS_URL="$REDIS_URL" API_JWT_SIGNING_KEY="$API_JWT_SIGNING_KEY" API_ENABLE_DEBUG_ROUTES=true API_HTTP_ADDR="127.0.0.1:${API_PORT}" RAG_GRPC_ADDR="127.0.0.1:${RAG_PORT}" ./bin/api &
 API_PID=$!
 
 for _ in $(seq 1 30); do
