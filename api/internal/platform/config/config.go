@@ -6,9 +6,12 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"time"
+
+	"enclave/api/internal/platform/objectstore"
 )
 
 type Config struct {
@@ -34,6 +37,10 @@ type Config struct {
 	// SecureCookies marks token cookies HTTPS-only. Only local development over plain
 	// HTTP may turn it off.
 	SecureCookies bool
+	// ObjectStore is the S3-compatible bucket holding original document files.
+	ObjectStore objectstore.Config
+	// MaxDocumentBytes is the largest file a user may upload.
+	MaxDocumentBytes int64
 }
 
 // Load reads the environment, applies defaults and returns every problem found at once,
@@ -52,6 +59,15 @@ func Load() (Config, error) {
 		AccessTokenTTL:    getDuration("API_ACCESS_TOKEN_TTL", 15*time.Minute, &errs),
 		RefreshTokenTTL:   getDuration("API_REFRESH_TOKEN_TTL", 7*24*time.Hour, &errs),
 		SecureCookies:     getBool("API_SECURE_COOKIES", true, &errs),
+		ObjectStore: objectstore.Config{
+			Endpoint:       getString("OBJECTSTORE_ENDPOINT", ""),
+			PublicEndpoint: getString("OBJECTSTORE_PUBLIC_ENDPOINT", getString("OBJECTSTORE_ENDPOINT", "")),
+			Region:         getString("OBJECTSTORE_REGION", "us-east-1"),
+			Bucket:         getString("OBJECTSTORE_BUCKET", "enclave-documents"),
+			AccessKey:      getString("OBJECTSTORE_ACCESS_KEY", ""),
+			SecretKey:      getString("OBJECTSTORE_SECRET_KEY", ""),
+		},
+		MaxDocumentBytes: getInt64("API_MAX_DOCUMENT_BYTES", 25<<20, &errs),
 	}
 
 	if cfg.ShutdownTimeout <= 0 {
@@ -62,6 +78,21 @@ func Load() (Config, error) {
 	}
 	if cfg.RedisURL == "" {
 		errs = append(errs, errors.New("REDIS_URL is required"))
+	}
+	for key, value := range map[string]string{
+		"OBJECTSTORE_ENDPOINT":   cfg.ObjectStore.Endpoint,
+		"OBJECTSTORE_ACCESS_KEY": cfg.ObjectStore.AccessKey,
+		"OBJECTSTORE_SECRET_KEY": cfg.ObjectStore.SecretKey,
+	} {
+		if value == "" {
+			errs = append(errs, fmt.Errorf("%s is required", key))
+		}
+	}
+	if _, err := url.ParseRequestURI(cfg.ObjectStore.PublicEndpoint); cfg.ObjectStore.PublicEndpoint != "" && err != nil {
+		errs = append(errs, errors.New("OBJECTSTORE_PUBLIC_ENDPOINT must be an absolute URL"))
+	}
+	if cfg.MaxDocumentBytes <= 0 {
+		errs = append(errs, errors.New("API_MAX_DOCUMENT_BYTES must be positive"))
 	}
 	if cfg.AccessTokenTTL <= 0 || cfg.RefreshTokenTTL <= cfg.AccessTokenTTL {
 		errs = append(errs, errors.New("API_ACCESS_TOKEN_TTL must be positive and shorter than API_REFRESH_TOKEN_TTL"))
@@ -91,6 +122,19 @@ func getDuration(key string, fallback time.Duration, errs *[]error) time.Duratio
 		return fallback
 	}
 	return d
+}
+
+func getInt64(key string, fallback int64, errs *[]error) int64 {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		*errs = append(*errs, fmt.Errorf("%s: %q is not an integer", key, v))
+		return fallback
+	}
+	return n
 }
 
 func getBool(key string, fallback bool, errs *[]error) bool {

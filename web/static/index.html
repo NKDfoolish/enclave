@@ -56,6 +56,20 @@
       <h2 id="workspace-title"></h2>
       <p>Your role: <strong id="workspace-role"></strong></p>
 
+      <div id="documents-panel">
+        <h3>Documents</h3>
+        <form id="upload-form" class="inline" hidden>
+          <label>File (PDF, Markdown, DOCX) <input name="file" type="file" accept=".pdf,.md,.markdown,.docx" required></label>
+          <label>Title (optional) <input name="title" maxlength="200"></label>
+          <button type="submit">Upload</button>
+        </form>
+        <table>
+          <thead><tr><th>Title</th><th>Size</th><th>Status</th><th>Shared with</th><th></th></tr></thead>
+          <tbody id="document-rows"></tbody>
+        </table>
+        <button id="more-documents" type="button" class="secondary" hidden>Load more</button>
+      </div>
+
       <div id="members-panel" hidden>
         <h3>Members</h3>
         <table>

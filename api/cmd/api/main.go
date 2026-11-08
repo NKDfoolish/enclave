@@ -9,18 +9,26 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
+	"time"
 
+	documentapp "enclave/api/internal/document/app"
+	documentinfra "enclave/api/internal/document/infra"
 	identityapp "enclave/api/internal/identity/app"
 	identityinfra "enclave/api/internal/identity/infra"
 	"enclave/api/internal/platform/config"
 	"enclave/api/internal/platform/httpserver"
+	"enclave/api/internal/platform/objectstore"
+	"enclave/api/internal/platform/outbox"
 	"enclave/api/internal/platform/postgres"
 	"enclave/api/internal/platform/ragclient"
 	"enclave/api/internal/platform/redis"
 	workspaceapp "enclave/api/internal/workspace/app"
 	workspaceinfra "enclave/api/internal/workspace/infra"
 )
+
+const abandonedUploadSweepInterval = 10 * time.Minute
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -52,6 +60,11 @@ func run(logger *slog.Logger) error {
 		}
 	}()
 
+	store := objectstore.New(cfg.ObjectStore)
+	if err := store.CheckBucket(context.Background()); err != nil {
+		return err
+	}
+
 	rag, err := ragclient.New(cfg.RAGAddr)
 	if err != nil {
 		return err
@@ -62,6 +75,8 @@ func run(logger *slog.Logger) error {
 		}
 	}()
 
+	workspaces := workspaceapp.NewService(workspaceinfra.NewRepository(pool))
+	documents := documentapp.NewService(workspaces, documentinfra.NewRepository(pool), store, cfg.MaxDocumentBytes)
 	svc := services{
 		identity: identityapp.NewService(
 			identityinfra.NewRepository(pool),
@@ -72,19 +87,58 @@ func run(logger *slog.Logger) error {
 				RefreshTTL: cfg.RefreshTokenTTL,
 			},
 		),
-		workspace: workspaceapp.NewService(workspaceinfra.NewRepository(pool)),
+		workspace: workspaces,
+		document:  documents,
 		rag:       rag,
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	// After the first signal, restore default signal handling so a second Ctrl+C
 	// kills the process immediately instead of waiting for graceful shutdown.
 	go func() {
-		<-ctx.Done()
+		<-signalCtx.Done()
 		stop()
 	}()
 
+	// Background work stops when ctx is cancelled: on a signal, or when the HTTP server
+	// exits with an error. Deferred calls run last-in-first-out, so cancel() runs before
+	// background.Wait(), and both run before the pool is closed.
+	ctx, cancel := context.WithCancel(signalCtx)
+	var background sync.WaitGroup
+	defer background.Wait()
+	defer cancel()
+
+	worker := outbox.NewWorker(pool, logger)
+	worker.Handle(documentapp.JobValidateUpload, documents.ValidateUpload)
+	worker.Handle(documentapp.JobDeleteObject, documents.DeleteObject)
+	background.Go(func() { worker.Run(ctx) })
+	background.Go(func() {
+		every(ctx, abandonedUploadSweepInterval, func() {
+			removed, err := documents.CleanupAbandonedUploads(ctx)
+			if err != nil {
+				logger.Error("clean up abandoned uploads", "err", err)
+			}
+			if removed > 0 {
+				logger.Info("cleaned up abandoned uploads", "removed", removed)
+			}
+		})
+	})
+
 	handler := routes(cfg, logger, svc)
 	return httpserver.Run(ctx, logger, cfg.HTTPAddr, handler, cfg.ShutdownTimeout)
+}
+
+// every calls fn once per interval until ctx is cancelled.
+func every(ctx context.Context, interval time.Duration, fn func()) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			fn()
+		}
+	}
 }

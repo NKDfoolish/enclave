@@ -46,7 +46,50 @@ services:
       timeout: 3s
       retries: 10
 
+  # S3-compatible object storage for original document files. Production uses Amazon S3
+  # with the same API. (MinIO no longer publishes community images; RustFS is a drop-in.)
+  objectstore:
+    image: rustfs/rustfs:1.0.3
+    environment:
+      RUSTFS_ACCESS_KEY: ${OBJECTSTORE_ACCESS_KEY:-enclave}
+      RUSTFS_SECRET_KEY: ${OBJECTSTORE_SECRET_KEY:-enclave-dev-secret}
+    ports:
+      - "${OBJECTSTORE_PORT:-9000}:9000"
+    volumes:
+      - objectstore-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:9000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-shot setup: create the private documents bucket and allow the web UI to PUT
+  # presigned uploads to it from the browser (CORS). Safe to run repeatedly.
+  objectstore-init:
+    image: amazon/aws-cli:2.38.4
+    depends_on:
+      objectstore:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: ${OBJECTSTORE_ACCESS_KEY:-enclave}
+      AWS_SECRET_ACCESS_KEY: ${OBJECTSTORE_SECRET_KEY:-enclave-dev-secret}
+      AWS_DEFAULT_REGION: us-east-1
+      BUCKET: ${OBJECTSTORE_BUCKET:-enclave-documents}
+      # Local development reaches the UI as either localhost or 127.0.0.1.
+      APP_ORIGINS: '"http://localhost:8080","http://127.0.0.1:8080"'
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -e
+        endpoint=http://objectstore:9000
+        aws --endpoint-url "$$endpoint" s3api head-bucket --bucket "$$BUCKET" 2>/dev/null \
+          || aws --endpoint-url "$$endpoint" s3api create-bucket --bucket "$$BUCKET"
+        aws --endpoint-url "$$endpoint" s3api put-bucket-cors --bucket "$$BUCKET" --cors-configuration \
+          '{"CORSRules":[{"AllowedOrigins":['"$$APP_ORIGINS"'],"AllowedMethods":["PUT","GET"],"AllowedHeaders":["*"],"MaxAgeSeconds":600}]}'
+        echo "bucket $$BUCKET ready"
+
 volumes:
   postgres-data:
   redis-data:
   qdrant-data:
+  objectstore-data:

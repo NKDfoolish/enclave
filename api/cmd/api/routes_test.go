@@ -1,9 +1,9 @@
 package main
 
-// Integration tests: the real HTTP handler from routes(), real services and a real Postgres.
-// Each test creates its own users and workspaces with unique emails, so tests never share
-// data and can run in any order. Set TEST_DATABASE_URL and TEST_REDIS_URL (or run
-// `make test`) to enable them.
+// Integration tests: the real HTTP handler from routes(), real services, and real Postgres,
+// Redis and object storage. Each test creates its own users and workspaces with unique
+// emails and its own bucket, so tests never share data and can run in any order.
+// Run them with `make test`, which sets the TEST_* variables (see platform/testenv).
 
 import (
 	"bytes"
@@ -17,7 +17,6 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -25,44 +24,36 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	documentapp "enclave/api/internal/document/app"
+	documentinfra "enclave/api/internal/document/infra"
 	identityapp "enclave/api/internal/identity/app"
 	identityinfra "enclave/api/internal/identity/infra"
 	"enclave/api/internal/platform/config"
-	"enclave/api/internal/platform/postgres"
-	"enclave/api/internal/platform/redis"
+	"enclave/api/internal/platform/objectstore"
+	"enclave/api/internal/platform/outbox"
+	"enclave/api/internal/platform/testenv"
 	workspaceapp "enclave/api/internal/workspace/app"
 	workspaceinfra "enclave/api/internal/workspace/infra"
 )
 
 const testPassword = "correct horse battery staple"
 
+// testMaxDocumentBytes keeps the "too large" test cheap.
+const testMaxDocumentBytes = 1 << 20
+
 type testEnv struct {
-	server *httptest.Server
-	pool   *pgxpool.Pool
+	server    *httptest.Server
+	pool      *pgxpool.Pool
+	store     *objectstore.Store
+	documents *documentapp.Service
+	worker    *outbox.Worker
 }
 
 func newTestEnv(t *testing.T) *testEnv {
 	t.Helper()
-	databaseURL, redisURL := os.Getenv("TEST_DATABASE_URL"), os.Getenv("TEST_REDIS_URL")
-	if databaseURL == "" || redisURL == "" {
-		// In CI a missing database must fail loudly, never turn into a silent green skip.
-		if os.Getenv("CI") != "" {
-			t.Fatal("TEST_DATABASE_URL and TEST_REDIS_URL must be set in CI")
-		}
-		t.Skip("TEST_DATABASE_URL or TEST_REDIS_URL is not set; run `make test`")
-	}
-
-	pool, err := postgres.Connect(context.Background(), databaseURL)
-	if err != nil {
-		t.Fatalf("connect to test database: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
-	redisClient, err := redis.Connect(context.Background(), redisURL)
-	if err != nil {
-		t.Fatalf("connect to test redis: %v", err)
-	}
-	t.Cleanup(func() { _ = redisClient.Close() })
+	pool := testenv.Postgres(t)
+	redisClient := testenv.Redis(t)
+	store := testenv.ObjectStore(t, "enclave-test-"+strings.ToLower(rand.Text()[:12]))
 
 	_, signingKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -74,19 +65,40 @@ func newTestEnv(t *testing.T) *testEnv {
 		RefreshTokenTTL: time.Hour,
 		SecureCookies:   false,
 	}
+	workspaces := workspaceapp.NewService(workspaceinfra.NewRepository(pool))
+	documents := documentapp.NewService(workspaces, documentinfra.NewRepository(pool), store, testMaxDocumentBytes)
 	svc := services{
 		identity: identityapp.NewService(
 			identityinfra.NewRepository(pool),
 			identityinfra.NewRevocationStore(redisClient),
 			identityapp.TokenConfig{SigningKey: cfg.JWTSigningKey, AccessTTL: cfg.AccessTokenTTL, RefreshTTL: cfg.RefreshTokenTTL},
 		),
-		workspace: workspaceapp.NewService(workspaceinfra.NewRepository(pool)),
+		workspace: workspaces,
+		document:  documents,
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	server := httptest.NewServer(routes(cfg, logger, svc))
 	t.Cleanup(server.Close)
 
-	return &testEnv{server: server, pool: pool}
+	worker := outbox.NewWorker(pool, logger)
+	worker.Handle(documentapp.JobValidateUpload, documents.ValidateUpload)
+	worker.Handle(documentapp.JobDeleteObject, documents.DeleteObject)
+
+	return &testEnv{server: server, pool: pool, store: store, documents: documents, worker: worker}
+}
+
+// runJobs runs queued background jobs until none are due, like the worker in production.
+func (env *testEnv) runJobs(t *testing.T) {
+	t.Helper()
+	for {
+		processed, err := env.worker.RunOnce(context.Background())
+		if err != nil {
+			t.Fatalf("run outbox job: %v", err)
+		}
+		if !processed {
+			return
+		}
+	}
 }
 
 // testUser is one person using the API with their own cookie jar.
@@ -104,7 +116,11 @@ func (env *testEnv) anonymous(t *testing.T) *testUser {
 	if err != nil {
 		t.Fatalf("create cookie jar: %v", err)
 	}
-	return &testUser{t: t, env: env, client: &http.Client{Jar: jar}}
+	return &testUser{t: t, env: env, client: &http.Client{
+		Jar: jar,
+		// Tests look at redirects (downloads) instead of following them.
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}}
 }
 
 // newUser registers and logs in a user with a unique email.
@@ -153,7 +169,7 @@ func (u *testUser) do(method, path string, payload any) (int, map[string]any) {
 
 	var decoded map[string]any
 	raw, _ := io.ReadAll(resp.Body)
-	if len(raw) > 0 {
+	if len(raw) > 0 && strings.HasPrefix(resp.Header.Get("Content-Type"), "application/json") {
 		if err := json.Unmarshal(raw, &decoded); err != nil {
 			u.t.Fatalf("%s %s: decode response %q: %v", method, path, raw, err)
 		}

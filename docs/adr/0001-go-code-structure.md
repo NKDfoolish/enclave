@@ -39,7 +39,11 @@ HTTP uses `net/http` with hand-written middleware (`platform/httpserver`) instea
 ## Consequences
 
 - A context's code lives in one folder; contexts communicate through their `app` APIs, not each
-  other's tables or internals.
+  other's tables or internals. Example: `document/app` declares a one-method `Memberships`
+  interface that `workspace/app.Service.MemberRole` satisfies, and uses `workspace/domain.Role`
+  as the shared vocabulary for roles.
+- `infra` may import types from its own context's `app` (e.g. a query struct used in the
+  `Repository` interface); `app` still never imports `infra`.
 - Authorization rules live in `domain`/`app`, so the web API and MCP server enforce the same rules.
 - Domain logic is testable without a database or HTTP server.
 - Go forbids import cycles, which keeps the dependency rule honest.
