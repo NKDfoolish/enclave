@@ -2,6 +2,8 @@
 
 Completed: 2026-10-11 · CI green on `main`.
 
+Flow diagrams for this part: [docs/flows.md](../flows.md) sections 1–3.
+
 The plan's "Done when" criteria:
 
 - [x] One command starts local infrastructure, and a Go service calls a Python service over gRPC (`make up`, `make smoke`).

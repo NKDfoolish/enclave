@@ -13,12 +13,16 @@ func setRequired(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://localhost/enclave")
 	t.Setenv("REDIS_URL", "redis://localhost:6380/0")
 	t.Setenv("API_JWT_SIGNING_KEY", base64.StdEncoding.EncodeToString(make([]byte, ed25519.SeedSize)))
+	t.Setenv("OBJECTSTORE_ENDPOINT", "http://localhost:9000")
+	t.Setenv("OBJECTSTORE_ACCESS_KEY", "key")
+	t.Setenv("OBJECTSTORE_SECRET_KEY", "secret")
 }
 
 func TestLoadDefaults(t *testing.T) {
 	for _, key := range []string{
 		"API_HTTP_ADDR", "API_SHUTDOWN_TIMEOUT", "RAG_GRPC_ADDR", "API_ENABLE_DEBUG_ROUTES",
 		"API_ACCESS_TOKEN_TTL", "API_REFRESH_TOKEN_TTL", "API_SECURE_COOKIES",
+		"OBJECTSTORE_PUBLIC_ENDPOINT", "OBJECTSTORE_REGION", "OBJECTSTORE_BUCKET", "API_MAX_DOCUMENT_BYTES",
 	} {
 		t.Setenv(key, "")
 	}
@@ -40,6 +44,13 @@ func TestLoadDefaults(t *testing.T) {
 	if len(cfg.JWTSigningKey) != ed25519.PrivateKeySize {
 		t.Errorf("signing key length = %d", len(cfg.JWTSigningKey))
 	}
+	store := cfg.ObjectStore
+	if store.PublicEndpoint != store.Endpoint || store.Bucket != "enclave-documents" || store.Region != "us-east-1" {
+		t.Errorf("object store defaults: %+v", store)
+	}
+	if cfg.MaxDocumentBytes != 25<<20 {
+		t.Errorf("max document bytes = %d, want 25 MiB", cfg.MaxDocumentBytes)
+	}
 }
 
 func TestLoadReportsAllErrors(t *testing.T) {
@@ -48,6 +59,8 @@ func TestLoadReportsAllErrors(t *testing.T) {
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("REDIS_URL", "")
 	t.Setenv("API_JWT_SIGNING_KEY", "too-short")
+	t.Setenv("OBJECTSTORE_ENDPOINT", "")
+	t.Setenv("API_MAX_DOCUMENT_BYTES", "big")
 
 	_, err := Load()
 	if err == nil {
@@ -55,6 +68,7 @@ func TestLoadReportsAllErrors(t *testing.T) {
 	}
 	for _, key := range []string{
 		"API_SHUTDOWN_TIMEOUT", "API_ENABLE_DEBUG_ROUTES", "DATABASE_URL", "REDIS_URL", "API_JWT_SIGNING_KEY",
+		"OBJECTSTORE_ENDPOINT", "API_MAX_DOCUMENT_BYTES",
 	} {
 		if !strings.Contains(err.Error(), key) {
 			t.Errorf("error should mention %s: %v", key, err)

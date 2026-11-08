@@ -3,7 +3,10 @@ package main
 import (
 	"log/slog"
 	"net/http"
+	"net/url"
 
+	documentapp "enclave/api/internal/document/app"
+	documenttransport "enclave/api/internal/document/transport"
 	identityapp "enclave/api/internal/identity/app"
 	identitytransport "enclave/api/internal/identity/transport"
 	"enclave/api/internal/platform/config"
@@ -18,6 +21,7 @@ import (
 type services struct {
 	identity  *identityapp.Service
 	workspace *workspaceapp.Service
+	document  *documentapp.Service
 	rag       diagnostics.RAGPinger
 }
 
@@ -33,6 +37,7 @@ func routes(cfg config.Config, logger *slog.Logger, svc services) http.Handler {
 	identity := identitytransport.NewHandler(svc.identity, logger, cfg.SecureCookies)
 	identity.RegisterRoutes(mux)
 	workspacetransport.NewHandler(svc.workspace, logger).RegisterRoutes(mux, identity.RequireAuth)
+	documenttransport.NewHandler(svc.document, logger).RegisterRoutes(mux, identity.RequireAuth)
 
 	// Unknown /v1 paths get a JSON 404 instead of falling through to the web UI.
 	mux.HandleFunc("/v1/", func(w http.ResponseWriter, r *http.Request) {
@@ -40,7 +45,7 @@ func routes(cfg config.Config, logger *slog.Logger, svc services) http.Handler {
 	})
 	// Not "GET /": it would conflict with "/v1/" under Go 1.22 pattern rules.
 	// web.Handler rejects methods other than GET and HEAD itself.
-	mux.Handle("/", web.Handler())
+	mux.Handle("/", web.Handler(origin(cfg.ObjectStore.PublicEndpoint)))
 
 	// Outermost first: every request gets an ID, is logged, and panics become logged 500s.
 	return httpserver.Chain(mux,
@@ -48,4 +53,13 @@ func routes(cfg config.Config, logger *slog.Logger, svc services) http.Handler {
 		httpserver.AccessLog(logger),
 		httpserver.Recover(logger),
 	)
+}
+
+// origin returns scheme://host of endpoint: the web UI may send presigned uploads there.
+func origin(endpoint string) string {
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
