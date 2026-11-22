@@ -2,6 +2,8 @@
 
 Branch: `part-1-workspace-access`.
 
+Flow diagrams for this part: [docs/flows.md](../flows.md) sections 4–12.
+
 The plan's "Done when" criteria:
 
 - [x] An admin can invite members and change or revoke their roles (API + web UI).

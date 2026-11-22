@@ -240,6 +240,8 @@ async function openWorkspace(workspaceID) {
   $("members-panel").hidden = !canViewMembers;
   $("admin-panel").hidden = !isAdmin;
 
+  $("upload-form").hidden = !canViewMembers; // admins and staff manage documents
+  await loadDocuments();
   if (canViewMembers) {
     await loadMembers(isAdmin);
   }
@@ -247,6 +249,151 @@ async function openWorkspace(workspaceID) {
     await loadInvitations();
   }
   showView("workspace-view");
+}
+
+// --- Documents ----------------------------------------------------------------------------
+
+let documentsCursor = "";
+let documentsPoll = null;
+
+function canManageDocuments() {
+  return currentWorkspace.role === "admin" || currentWorkspace.role === "staff";
+}
+
+function documentsPath(suffix = "") {
+  return `/v1/workspaces/${currentWorkspace.id}/documents${suffix}`;
+}
+
+async function loadDocuments(append = false) {
+  const cursor = append ? `?cursor=${encodeURIComponent(documentsCursor)}` : "";
+  const { documents, next_cursor } = await api("GET", documentsPath(cursor));
+  const rows = $("document-rows");
+  if (!append) {
+    rows.replaceChildren();
+  }
+  if (!append && documents.length === 0) {
+    const empty = element("tr");
+    const cell = element("td", "No documents yet.", "muted");
+    cell.colSpan = 5;
+    empty.append(cell);
+    rows.append(empty);
+  }
+  for (const doc of documents) {
+    rows.append(documentRow(doc));
+  }
+  documentsCursor = next_cursor;
+  $("more-documents").hidden = !next_cursor;
+  scheduleDocumentsPoll(documents);
+}
+
+$("more-documents").addEventListener("click", () => attempt(() => loadDocuments(true)));
+
+function documentRow(doc) {
+  const row = element("tr");
+  const title = element("td", doc.title);
+  title.title = doc.filename;
+  const status = element("td");
+  status.append(element("span", doc.status, "badge"));
+  if (doc.failure_reason) {
+    status.append(element("div", doc.failure_reason, "muted"));
+  }
+
+  const actions = element("td");
+  if (doc.status === "ready") {
+    actions.append(button("Download", () => attempt(() => download(doc))));
+  }
+  if (canManageDocuments()) {
+    actions.append(button("Delete", () => deleteDocument(doc), "danger"));
+  }
+
+  row.append(title, element("td", formatSize(doc.size_bytes)), status, visibilityCell(doc), actions);
+  return row;
+}
+
+function visibilityCell(doc) {
+  const cell = element("td");
+  const label = { internal: "Staff only", client_common: "Staff and clients" };
+  if (!canManageDocuments()) {
+    cell.textContent = label[doc.visibility];
+    return cell;
+  }
+  const select = element("select");
+  for (const value of ["internal", "client_common"]) {
+    const option = element("option", label[value]);
+    option.value = value;
+    option.selected = value === doc.visibility;
+    select.append(option);
+  }
+  select.addEventListener("change", () =>
+    attempt(async () => {
+      await api("PATCH", documentsPath(`/${doc.id}`), { visibility: select.value });
+      notify(`"${doc.title}" is now visible to ${label[select.value].toLowerCase()}.`);
+    }),
+  );
+  cell.append(select);
+  return cell;
+}
+
+// The API answers /download with a redirect to a 60-second presigned URL on the storage
+// server. Loading the document first refreshes an expired access token, then the browser
+// navigates and saves the file.
+async function download(doc) {
+  await api("GET", documentsPath(`/${doc.id}`));
+  location.href = documentsPath(`/${doc.id}/download`);
+}
+
+async function deleteDocument(doc) {
+  if (!confirm(`Delete "${doc.title}"? This cannot be undone.`)) {
+    return;
+  }
+  await attempt(async () => {
+    await api("DELETE", documentsPath(`/${doc.id}`));
+    notify(`"${doc.title}" was deleted.`);
+    await loadDocuments();
+  });
+}
+
+// Upload: 1) register the document and get a presigned URL, 2) PUT the file straight to
+// object storage, 3) tell the API it is done. The server then checks the content.
+$("upload-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = event.target;
+  const file = form.file.files[0];
+  attempt(async () => {
+    const { document: doc, upload } = await api("POST", documentsPath(), {
+      filename: file.name,
+      title: form.title.value,
+      size_bytes: file.size,
+    });
+    const stored = await fetch(upload.url, { method: upload.method, headers: upload.headers, body: file });
+    if (!stored.ok) {
+      throw new Error(`Upload to storage failed (${stored.status}).`);
+    }
+    await api("POST", documentsPath(`/${doc.id}/complete`));
+    form.reset();
+    notify(`"${doc.title}" uploaded; checking the file…`);
+    await loadDocuments();
+  });
+});
+
+// While any listed document is still uploading or processing, refresh the list shortly.
+function scheduleDocumentsPoll(documents) {
+  clearTimeout(documentsPoll);
+  const pending = documents.some((d) => d.status === "uploading" || d.status === "processing");
+  if (pending && currentWorkspace) {
+    const workspaceID = currentWorkspace.id;
+    documentsPoll = setTimeout(() => {
+      if (currentWorkspace?.id === workspaceID) {
+        attempt(() => loadDocuments());
+      }
+    }, 1500);
+  }
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 async function loadMembers(isAdmin) {

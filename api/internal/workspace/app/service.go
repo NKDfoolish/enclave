@@ -78,6 +78,17 @@ func (s *Service) GetWorkspace(ctx context.Context, caller authn.Principal, work
 	return s.membership(ctx, caller, workspaceID)
 }
 
+// MemberRole is how other contexts (documents) learn what the caller may do in a workspace.
+// It returns ErrNotFound when the caller is not a member. The role is read fresh on every
+// call, so role changes and removals take effect immediately everywhere.
+func (s *Service) MemberRole(ctx context.Context, caller authn.Principal, workspaceID uuid.UUID) (domain.Role, error) {
+	membership, err := s.membership(ctx, caller, workspaceID)
+	if err != nil {
+		return "", err
+	}
+	return membership.Role, nil
+}
+
 func (s *Service) ListMembers(ctx context.Context, caller authn.Principal, workspaceID uuid.UUID) ([]domain.Member, error) {
 	membership, err := s.membership(ctx, caller, workspaceID)
 	if err != nil {

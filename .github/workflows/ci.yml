@@ -53,9 +53,22 @@ jobs:
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 3s --health-retries 10
+      objectstore:
+        image: rustfs/rustfs:1.0.3
+        env:
+          RUSTFS_ACCESS_KEY: enclave
+          RUSTFS_SECRET_KEY: enclave-ci-secret
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd "curl -fs http://localhost:9000/health"
+          --health-interval 5s --health-timeout 3s --health-retries 10
     env:
       TEST_DATABASE_URL: postgres://enclave:enclave@localhost:5432/enclave_test?sslmode=disable
       TEST_REDIS_URL: redis://localhost:6379/15
+      TEST_OBJECTSTORE_ENDPOINT: http://localhost:9000
+      TEST_OBJECTSTORE_ACCESS_KEY: enclave
+      TEST_OBJECTSTORE_SECRET_KEY: enclave-ci-secret
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -103,9 +116,22 @@ jobs:
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 3s --health-retries 10
+      objectstore:
+        image: rustfs/rustfs:1.0.3
+        env:
+          RUSTFS_ACCESS_KEY: enclave
+          RUSTFS_SECRET_KEY: enclave-ci-secret
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd "curl -fs http://localhost:9000/health"
+          --health-interval 5s --health-timeout 3s --health-retries 10
     env:
       DATABASE_URL: postgres://enclave:enclave@localhost:5432/enclave?sslmode=disable
       REDIS_URL: redis://localhost:6379/0
+      OBJECTSTORE_ENDPOINT: http://localhost:9000
+      OBJECTSTORE_ACCESS_KEY: enclave
+      OBJECTSTORE_SECRET_KEY: enclave-ci-secret
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -113,4 +139,11 @@ jobs:
           go-version-file: go.mod
       - uses: astral-sh/setup-uv@v10.2.0
       - run: cd rag && uv sync --locked
+      # The API checks its bucket at startup; production buckets come from Terraform.
+      - name: Create bucket
+        env:
+          AWS_ACCESS_KEY_ID: enclave
+          AWS_SECRET_ACCESS_KEY: enclave-ci-secret
+          AWS_DEFAULT_REGION: us-east-1
+        run: aws --endpoint-url "$OBJECTSTORE_ENDPOINT" s3api create-bucket --bucket enclave-documents
       - run: ./scripts/smoke.sh

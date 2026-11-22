@@ -1,6 +1,6 @@
 # web
 
-Browser UI for Enclave: login, workspaces, members and invitations.
+Browser UI for Enclave: login, workspaces, members, invitations and documents.
 
 Plain HTML, CSS and JavaScript with no build step. `web.go` embeds `static/` into the Core API
 binary, which serves it at `/`, so the UI and API share one origin and the session cookie needs

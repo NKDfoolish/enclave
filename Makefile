@@ -12,6 +12,13 @@ REDIS_URL ?= redis://localhost:6380/0
 TEST_DATABASE_URL ?= postgres://enclave:enclave@localhost:5432/enclave_test?sslmode=disable
 # Redis database 15 keeps test keys apart from local development data.
 TEST_REDIS_URL ?= redis://localhost:6380/15
+OBJECTSTORE_ENDPOINT ?= http://localhost:9000
+OBJECTSTORE_ACCESS_KEY ?= enclave
+# DEVELOPMENT ONLY, matches compose.yaml.
+OBJECTSTORE_SECRET_KEY ?= enclave-dev-secret
+TEST_OBJECTSTORE_ENDPOINT ?= $(OBJECTSTORE_ENDPOINT)
+TEST_OBJECTSTORE_ACCESS_KEY ?= $(OBJECTSTORE_ACCESS_KEY)
+TEST_OBJECTSTORE_SECRET_KEY ?= $(OBJECTSTORE_SECRET_KEY)
 # DEVELOPMENT ONLY. Any deployed environment must set its own secret key.
 API_JWT_SIGNING_KEY ?= ArYMsSrgfvqvccx//yPDW/ciJ8b8YtFUSFHXVUEtXRQ=
 # The binary defaults are the safe ones; local `make run-api` over plain HTTP relaxes them.
@@ -31,8 +38,10 @@ help: ## Show available commands
 
 ##@ Infrastructure
 .PHONY: up down ps logs
-up: ## Start Postgres, Redis and Qdrant and wait until healthy
+up: ## Start Postgres, Redis, Qdrant and object storage; wait until ready
 	$(COMPOSE) up -d --wait
+	@# --wait does not wait for one-shot containers; block until the bucket exists.
+	@$(COMPOSE) wait objectstore-init >/dev/null
 
 down: ## Stop local infrastructure (data volumes are kept)
 	$(COMPOSE) down

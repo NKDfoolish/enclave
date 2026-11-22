@@ -12,12 +12,17 @@ import (
 var static embed.FS
 
 // Handler serves the UI with security headers. Only GET and HEAD are allowed.
-func Handler() http.Handler {
+// uploadOrigin is the object storage origin the UI may send presigned uploads to.
+func Handler(uploadOrigin string) http.Handler {
 	files, err := fs.Sub(static, "static")
 	if err != nil {
 		panic("web: static directory missing from embed: " + err.Error()) // build-time mistake
 	}
 	fileServer := http.FileServerFS(files)
+	// Only our own scripts and styles may run, no site may frame the UI, and fetch() may only
+	// reach the API and the storage origin used for presigned uploads.
+	csp := "default-src 'self'; connect-src 'self' " + uploadOrigin +
+		"; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -26,9 +31,7 @@ func Handler() http.Handler {
 			return
 		}
 		header := w.Header()
-		// Only our own scripts and styles may run, and no site may frame the UI.
-		header.Set("Content-Security-Policy",
-			"default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		header.Set("Content-Security-Policy", csp)
 		header.Set("X-Content-Type-Options", "nosniff")
 		header.Set("Referrer-Policy", "no-referrer")
 		header.Set("Cache-Control", "no-cache")
