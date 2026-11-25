@@ -11,10 +11,10 @@ import (
 
 	"github.com/google/uuid"
 
+	"enclave/api/internal/authn"
 	"enclave/api/internal/document/app"
 	"enclave/api/internal/document/domain"
-	"enclave/api/internal/platform/authn"
-	"enclave/api/internal/platform/httpserver"
+	"enclave/internal/platform/httpserver"
 )
 
 type Handler struct {

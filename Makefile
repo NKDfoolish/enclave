@@ -24,13 +24,15 @@ API_JWT_SIGNING_KEY ?= ArYMsSrgfvqvccx//yPDW/ciJ8b8YtFUSFHXVUEtXRQ=
 # The binary defaults are the safe ones; local `make run-api` over plain HTTP relaxes them.
 API_ENABLE_DEBUG_ROUTES ?= true
 API_SECURE_COOKIES ?= false
+# DEVELOPMENT ONLY. Internal services authenticate to the LLM Gateway with these tokens.
+GATEWAY_SERVICE_TOKENS ?= dev=enclave-dev-gateway-token
 
 # Some machines only have the standalone docker-compose binary.
 COMPOSE := $(shell docker compose version >/dev/null 2>&1 && echo "docker compose" || echo "docker-compose")
 
 GOOSE := go run github.com/pressly/goose/v3/cmd/goose@v3.26.0
 GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.5.0
-MIGRATIONS_DIR := api/migrations
+MIGRATIONS_DIR := migrations
 
 .PHONY: help
 help: ## Show available commands
@@ -74,7 +76,7 @@ test-db: ## Create the enclave_test database if missing and migrate it
 	$(GOOSE) -dir $(MIGRATIONS_DIR) postgres "$(TEST_DATABASE_URL)" up
 
 ##@ Code
-.PHONY: proto setup lint fmt test smoke run-api run-rag
+.PHONY: proto setup lint fmt test smoke bench-gateway run-api run-rag run-gateway
 proto: ## Lint protos and regenerate Go and Python code
 	buf lint
 	buf generate
@@ -101,5 +103,11 @@ smoke: ## End-to-end check: Go API calls Python RAG over gRPC
 run-rag: ## Run the RAG gRPC server
 	cd rag && PYTHONPATH=src:gen uv run python -m rag.main
 
+bench-gateway: ## Measure the latency the LLM Gateway adds, with k6 and a fake provider
+	./scripts/bench-gateway.sh
+
 run-api: ## Run the Core API
 	go run ./api/cmd/api
+
+run-gateway: ## Run the LLM Gateway (start `ollama serve` for local models)
+	go run ./gateway/cmd/gateway

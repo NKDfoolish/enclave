@@ -78,6 +78,18 @@
         </table>
       </div>
 
+      <div id="ai-panel" hidden>
+        <h3>AI providers</h3>
+        <p class="muted">
+          Local models run inside Enclave and are always allowed. External providers receive
+          questions and document excerpts only if an admin allows them here.
+        </p>
+        <form id="ai-settings-form">
+          <fieldset id="ai-provider-options" class="inline"></fieldset>
+          <button id="ai-settings-save" type="submit">Save</button>
+        </form>
+      </div>
+
       <div id="admin-panel" hidden>
         <h3>Invite someone</h3>
         <form id="invite-form" class="inline">

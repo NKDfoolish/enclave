@@ -12,9 +12,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	goredis "github.com/redis/go-redis/v9"
 
-	"enclave/api/internal/platform/objectstore"
-	"enclave/api/internal/platform/postgres"
-	"enclave/api/internal/platform/redis"
+	"enclave/internal/platform/objectstore"
+	"enclave/internal/platform/postgres"
+	"enclave/internal/platform/redis"
 )
 
 // Require returns the value of each variable, skipping or failing the test if any is unset.

@@ -16,7 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"enclave/api/internal/platform/testenv"
+	"enclave/internal/platform/testenv"
 )
 
 func TestBackoffDoublesWithJitter(t *testing.T) {

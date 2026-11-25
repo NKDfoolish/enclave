@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"enclave/api/internal/document/domain"
-	"enclave/api/internal/platform/objectstore"
+	"enclave/internal/platform/objectstore"
 )
 
 var samplePDF = []byte("%PDF-1.7\n1 0 obj << /Type /Catalog >> endobj\n%%EOF\n")

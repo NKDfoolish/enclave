@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"enclave/api/internal/identity/domain"
-	"enclave/api/internal/platform/postgres"
+	"enclave/internal/platform/postgres"
 )
 
 type Repository struct {

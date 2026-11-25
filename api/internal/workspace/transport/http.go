@@ -10,10 +10,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"enclave/api/internal/platform/authn"
-	"enclave/api/internal/platform/httpserver"
+	"enclave/api/internal/authn"
 	"enclave/api/internal/workspace/app"
 	"enclave/api/internal/workspace/domain"
+	"enclave/internal/platform/httpserver"
 )
 
 type Handler struct {
@@ -38,6 +38,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, requireAuth httpserver.Midd
 		"GET /v1/workspaces/{workspaceID}/invitations":                   h.listInvitations,
 		"DELETE /v1/workspaces/{workspaceID}/invitations/{invitationID}": h.revokeInvitation,
 		"POST /v1/invitations/accept":                                    h.acceptInvitation,
+		"GET /v1/workspaces/{workspaceID}/ai-settings":                   h.getAISettings,
+		"PUT /v1/workspaces/{workspaceID}/ai-settings":                   h.updateAISettings,
 	}
 	for pattern, handler := range routes {
 		mux.Handle(pattern, requireAuth(handler))
