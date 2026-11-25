@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"time"
 
+	"enclave/api/internal/authn"
 	"enclave/api/internal/identity/app"
 	"enclave/api/internal/identity/domain"
-	"enclave/api/internal/platform/authn"
-	"enclave/api/internal/platform/httpserver"
+	"enclave/internal/platform/httpserver"
 )
 
 const (

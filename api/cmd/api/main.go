@@ -13,19 +13,19 @@ import (
 	"syscall"
 	"time"
 
+	"enclave/api/internal/config"
 	documentapp "enclave/api/internal/document/app"
 	documentinfra "enclave/api/internal/document/infra"
 	identityapp "enclave/api/internal/identity/app"
 	identityinfra "enclave/api/internal/identity/infra"
-	"enclave/api/internal/platform/config"
-	"enclave/api/internal/platform/httpserver"
-	"enclave/api/internal/platform/objectstore"
-	"enclave/api/internal/platform/outbox"
-	"enclave/api/internal/platform/postgres"
-	"enclave/api/internal/platform/ragclient"
-	"enclave/api/internal/platform/redis"
+	"enclave/api/internal/ragclient"
 	workspaceapp "enclave/api/internal/workspace/app"
 	workspaceinfra "enclave/api/internal/workspace/infra"
+	"enclave/internal/platform/httpserver"
+	"enclave/internal/platform/objectstore"
+	"enclave/internal/platform/outbox"
+	"enclave/internal/platform/postgres"
+	"enclave/internal/platform/redis"
 )
 
 const abandonedUploadSweepInterval = 10 * time.Minute

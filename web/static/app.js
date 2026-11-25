@@ -238,12 +238,14 @@ async function openWorkspace(workspaceID) {
   const isAdmin = currentWorkspace.role === "admin";
   const canViewMembers = isAdmin || currentWorkspace.role === "staff";
   $("members-panel").hidden = !canViewMembers;
+  $("ai-panel").hidden = !canViewMembers; // staff see the AI policy, only admins change it
   $("admin-panel").hidden = !isAdmin;
 
   $("upload-form").hidden = !canViewMembers; // admins and staff manage documents
   await loadDocuments();
   if (canViewMembers) {
     await loadMembers(isAdmin);
+    await loadAISettings(isAdmin);
   }
   if (isAdmin) {
     await loadInvitations();
@@ -450,6 +452,37 @@ async function removeMember(member) {
     await openWorkspace(currentWorkspace.id);
   });
 }
+
+// --- AI settings --------------------------------------------------------------------------
+
+async function loadAISettings(isAdmin) {
+  const settings = await api("GET", `/v1/workspaces/${currentWorkspace.id}/ai-settings`);
+  const options = $("ai-provider-options");
+  options.replaceChildren();
+  for (const provider of settings.available_external_providers) {
+    const checkbox = element("input");
+    checkbox.type = "checkbox";
+    checkbox.name = "provider";
+    checkbox.value = provider;
+    checkbox.checked = settings.external_providers.includes(provider);
+    checkbox.disabled = !isAdmin;
+    const label = element("label");
+    label.append(checkbox, ` ${provider}`);
+    options.append(label);
+  }
+  $("ai-settings-save").hidden = !isAdmin;
+}
+
+$("ai-settings-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const checked = event.target.querySelectorAll("input[name=provider]:checked");
+  const providers = Array.from(checked, (checkbox) => checkbox.value);
+  attempt(async () => {
+    await api("PUT", `/v1/workspaces/${currentWorkspace.id}/ai-settings`, { external_providers: providers });
+    notify(providers.length ? `Allowed: ${providers.join(", ")}.` : "Only local models are allowed now.");
+    await loadAISettings(true);
+  });
+});
 
 async function loadInvitations() {
   const { invitations } = await api("GET", `/v1/workspaces/${currentWorkspace.id}/invitations`);

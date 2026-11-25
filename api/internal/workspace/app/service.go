@@ -13,10 +13,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"enclave/api/internal/platform/authn"
-	"enclave/api/internal/platform/email"
-	"enclave/api/internal/platform/securetoken"
+	"enclave/api/internal/authn"
 	"enclave/api/internal/workspace/domain"
+	"enclave/internal/platform/email"
+	"enclave/internal/platform/securetoken"
 )
 
 const (
@@ -41,6 +41,9 @@ type Repository interface {
 	InvitationByTokenHash(ctx context.Context, tokenHash []byte) (domain.Invitation, error)
 	AcceptInvitation(ctx context.Context, invitationID, userID uuid.UUID, now time.Time) error
 	RevokeInvitation(ctx context.Context, workspaceID, invitationID uuid.UUID, now time.Time) error
+
+	AISettings(ctx context.Context, workspaceID uuid.UUID) (domain.AISettings, error)
+	SaveAISettings(ctx context.Context, workspaceID uuid.UUID, providers []domain.ExternalProvider, updatedBy uuid.UUID) (domain.AISettings, error)
 }
 
 type Service struct {

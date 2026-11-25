@@ -1,0 +1,16 @@
+data: {"id":"chatcmpl-a8eff3c7-6173-4e25-90b0-c9b8acc76a3a","choices":[{"index":0,"delta":{"content":"Xin","role":"assistant"},"finish_reason":null,"logprobs":null}],"created":1795345507,"model":"nvidia/nemotron-3.5-bolt-e4b","object":"chat.completion.chunk"}
+
+data: {"id":"chatcmpl-a8eff3c7-6173-4e25-90b0-c9b8acc76a3a","choices":[{"index":0,"delta":{"content":" chào"},"finish_reason":null,"logprobs":null}],"created":1795345507,"model":"nvidia/nemotron-3.5-bolt-e4b","object":"chat.completion.chunk"}
+
+data: {"id":"chatcmpl-a8eff3c7-6173-4e25-90b0-c9b8acc76a3a","choices":[{"index":0,"delta":{"content":" bạn"},"finish_reason":null,"logprobs":null}],"created":1795345507,"model":"nvidia/nemotron-3.5-bolt-e4b","object":"chat.completion.chunk"}
+
+data: {"id":"chatcmpl-a8eff3c7-6173-4e25-90b0-c9b8acc76a3a","choices":[{"index":0,"delta":{"content":" khỏe"},"finish_reason":null,"logprobs":null}],"created":1795345507,"model":"nvidia/nemotron-3.5-bolt-e4b","object":"chat.completion.chunk"}
+
+data: {"id":"chatcmpl-a8eff3c7-6173-4e25-90b0-c9b8acc76a3a","choices":[{"index":0,"delta":{"content":" không"},"finish_reason":null,"logprobs":null}],"created":1795345507,"model":"nvidia/nemotron-3.5-bolt-e4b","object":"chat.completion.chunk"}
+
+data: {"id":"chatcmpl-a8eff3c7-6173-4e25-90b0-c9b8acc76a3a","choices":[{"index":0,"delta":{},"finish_reason":"stop","logprobs":null}],"created":1795345507,"model":"nvidia/nemotron-3.5-bolt-e4b","object":"chat.completion.chunk"}
+
+data: {"id":"chatcmpl-a8eff3c7-6173-4e25-90b0-c9b8acc76a3a","choices":[],"created":1795345507,"model":"nvidia/nemotron-3.5-bolt-e4b","object":"chat.completion.chunk","usage":{"prompt_tokens":18,"completion_tokens":6,"total_tokens":24,"prompt_tokens_details":{"cached_tokens":0},"completion_tokens_details":{"reasoning_tokens":0}}}
+
+data: [DONE]
+

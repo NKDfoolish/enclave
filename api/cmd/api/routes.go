@@ -5,15 +5,15 @@ import (
 	"net/http"
 	"net/url"
 
+	"enclave/api/internal/config"
+	"enclave/api/internal/diagnostics"
 	documentapp "enclave/api/internal/document/app"
 	documenttransport "enclave/api/internal/document/transport"
 	identityapp "enclave/api/internal/identity/app"
 	identitytransport "enclave/api/internal/identity/transport"
-	"enclave/api/internal/platform/config"
-	"enclave/api/internal/platform/diagnostics"
-	"enclave/api/internal/platform/httpserver"
 	workspaceapp "enclave/api/internal/workspace/app"
 	workspacetransport "enclave/api/internal/workspace/transport"
+	"enclave/internal/platform/httpserver"
 	"enclave/web"
 )
 

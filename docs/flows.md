@@ -10,6 +10,7 @@ Contents
 - Part 0, foundation: [Startup and shutdown](#1-startup-and-shutdown) · [Request pipeline](#2-request-pipeline) · [Core API calls RAG over gRPC](#3-core-api-calls-rag-over-grpc)
 - Part 1, accounts and workspaces: [Register](#4-register) · [Login](#5-login) · [Authenticated request](#6-authenticated-request) · [Refresh tokens](#7-refresh-tokens) · [Logout](#8-logout) · [Create workspace](#9-create-workspace) · [Invite a member](#10-invite-a-member) · [Accept an invitation](#11-accept-an-invitation) · [Change role or remove a member](#12-change-role-or-remove-a-member)
 - Part 2, document library: [Upload](#13-upload-a-document) · [Content check](#14-content-check-background) · [List](#15-list-documents) · [Download](#16-download-a-document) · [Share and unshare](#17-share-and-unshare) · [Delete](#18-delete-a-document) · [Abandoned uploads](#19-abandoned-upload-sweep) · [Outbox worker](#20-outbox-worker)
+- Part 3, LLM Gateway: [Gateway startup](#21-gateway-startup) · [Streamed chat](#22-streamed-chat-completion) · [Fallback before output](#23-fallback-before-output) · [Failure after output began](#24-failure-after-output-began) · [Caller cancels](#25-caller-cancels) · [Embeddings](#26-embeddings) · [Rate limit](#27-rate-limit) · [Change AI settings](#28-change-ai-settings)
 
 ## Components
 
@@ -21,9 +22,12 @@ flowchart LR
         Worker["Outbox worker<br/>(goroutine)"]
     end
     RAG["RAG service<br/>(Python, gRPC)"]
-    PG[("Postgres<br/>users, workspaces,<br/>documents, outbox")]
-    Redis[("Redis<br/>token revocation list")]
+    GW["LLM Gateway (Go)<br/>OpenAI-format API"]
+    PG[("Postgres<br/>users, workspaces, documents,<br/>outbox, AI settings, LLM usage")]
+    Redis[("Redis<br/>token revocation list,<br/>gateway rate limits")]
     S3[("Object storage<br/>RustFS / Amazon S3")]
+    Local["Local models<br/>Ollama"]
+    External["External providers<br/>NVIDIA NIM, Anthropic"]
 
     Browser -->|"JSON over HTTPS + cookies"| HTTP
     Browser -->|"presigned PUT / GET"| S3
@@ -33,6 +37,11 @@ flowchart LR
     HTTP -->|"gRPC"| RAG
     Worker --> PG
     Worker -->|"read, delete"| S3
+    RAG -. "chat, embeddings (Part 4)" .-> GW
+    GW -->|"AI settings, usage"| PG
+    GW -->|"rate limit"| Redis
+    GW --> Local
+    GW -->|"only if the workspace allows"| External
 ```
 
 ---
@@ -71,7 +80,7 @@ sequenceDiagram
 
 ### 2. Request pipeline
 
-`api/cmd/api/routes.go`, `api/internal/platform/httpserver/middleware.go`. Every request goes
+`api/cmd/api/routes.go`, `internal/platform/httpserver/middleware.go`. Every request goes
 through the same three middleware before routing.
 
 ```mermaid
@@ -104,7 +113,7 @@ sequenceDiagram
 
 ### 3. Core API calls RAG over gRPC
 
-`api/internal/platform/ragclient`, `rag/src/rag/server.py`. Debug route only
+`api/internal/ragclient`, `rag/src/rag/server.py`. Debug route only
 (`API_ENABLE_DEBUG_ROUTES=true`); real RAG calls arrive in Part 4.
 
 ```mermaid
@@ -570,7 +579,7 @@ sequenceDiagram
 
 ### 20. Outbox worker
 
-`api/internal/platform/outbox/outbox.go`. One goroutine in the API process; several workers can
+`internal/platform/outbox/outbox.go`. One goroutine in the API process; several workers can
 share the table safely. Jobs are leased, not held in a transaction, so no database connection is
 held while a handler runs.
 
@@ -604,4 +613,240 @@ sequenceDiagram
         end
     end
     Note over W,PG: If a worker dies mid-job, nobody renews its lease. After 5 minutes the lease expires and another worker claims the job (at-least-once, so handlers are idempotent).
+```
+
+---
+
+## Part 3: LLM Gateway
+
+The gateway is a separate Go service (`gateway/`). Internal services call it with a service
+token and the workspace ID; it never sees browsers or user cookies. Its decisions: ADR 0004.
+
+### 21. Gateway startup
+
+`gateway/cmd/gateway/main.go`, `gateway/internal/config`. The catalog file names providers and
+aliases; a provider whose API key is not set is disabled and its routes are skipped.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Main as main / run
+    participant Cfg as config
+    participant Deps as Postgres, Redis
+    participant HTTP as HTTP server
+
+    Main->>Cfg: Load() — env settings, service tokens (name=token, ≥ 16 chars each)
+    Main->>Cfg: LoadCatalog(gateway/catalog.json) — unknown fields, unknown providers, embedding fallback are errors
+    alt invalid config or catalog
+        Main-->>Main: log every problem, exit 1
+    end
+    Main->>Deps: connect Postgres, ping Redis
+    loop each provider in the catalog
+        alt api_key_env set but empty
+            Main->>Main: log "provider disabled", skip it
+        else kind openai (Ollama, NVIDIA, OpenAI)
+            Main->>Main: openai adapter: chat + embeddings
+        else kind anthropic
+            Main->>Main: anthropic adapter (official SDK, env defaults off, 0 retries): chat only
+        end
+    end
+    Main->>HTTP: serve until SIGTERM, then graceful shutdown
+```
+
+### 22. Streamed chat completion
+
+`gateway/internal/llm/transport/http.go`, `app/service.go`, `infra/openai`. The happy path.
+Before any provider is called, the request is checked, the alias resolved, routes filtered by
+the workspace's AI settings, and one token taken from the workspace's bucket.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Caller (RAG)
+    participant T as transport
+    participant S as app.Service
+    participant PG as Postgres
+    participant R as Redis
+    participant P as Provider (Ollama)
+
+    C->>T: POST /v1/chat/completions {model: "chat-fast", stream: true, messages}<br/>Authorization: Bearer token, X-Enclave-Workspace-ID
+    T->>T: service token valid? (constant-time) else 401 — workspace header a UUID? else 400
+    T->>S: Chat(call, request, sseOutput)
+    S->>S: validate messages, max_tokens — alias "chat-fast" known? else 404
+    S->>PG: workspace exists? external providers it allows (workspace_ai_settings)
+    S->>S: keep routes whose provider is configured and allowed (local ones always are)
+    S->>R: token bucket script: refill, take 1 (atomic)
+    alt bucket empty
+        S-->>T: RateLimitError → 429 + Retry-After
+    end
+    S->>P: POST /v1/chat/completions stream=true, include_usage (first-token timer 30 s starts)
+    P-->>S: data: {"choices":[{"delta":{"content":"Xin"}}]}
+    S->>S: first event: stop the timer — committed to this provider
+    S->>T: Begin(route) then Write(chunk)
+    T-->>C: 200 text/event-stream, X-Enclave-Provider: ollama — data: chunk (flushed)
+    loop every further chunk
+        P-->>S: data: chunk
+        S->>T: Write(chunk)
+        T-->>C: data: chunk (flushed)
+    end
+    P-->>S: finish_reason, usage {prompt_tokens, completion_tokens}, [DONE]
+    S->>PG: INSERT llm_usage (attempt 1, ok, tokens, cost, latency, first token)
+    T-->>C: finish chunk, usage chunk (if asked), data: [DONE]
+```
+
+Non-streamed requests run the same path; `collectOutput` gathers the chunks and the handler
+answers with one JSON body.
+
+### 23. Fallback before output
+
+`app/service.go` (`Chat`, `chatAttempt`). The next route is tried only while nothing has reached
+the caller and the error is one another provider could avoid: no connection, a timeout, 429,
+5xx, and also 401/403/404 (a bad key or a retired model at that provider). 400, 413 and 422 blame
+the request itself and are returned at once.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as app.Service
+    participant A as Route 1 (ollama)
+    participant B as Route 2 (nvidia, external)
+    participant PG as Postgres
+    participant T as transport
+
+    S->>A: stream request (first-token timer starts)
+    alt connection refused / 503 / 404 model gone
+        A-->>S: ProviderError, retryable
+    else nothing for 30 s
+        S->>S: timer cancels the attempt with cause ErrFirstTokenTimeout
+        S->>A: request aborted
+    end
+    S->>PG: INSERT llm_usage (attempt 1, failed, error_code, 0 tokens — nothing was produced)
+    Note over S,B: Route 2 is only in the list if the workspace allows nvidia.
+    S->>B: stream request (new first-token timer)
+    B-->>S: first chunk
+    S->>T: Begin(route 2), Write(...)
+    S->>PG: INSERT llm_usage (attempt 2, ok)
+    alt every route failed
+        S-->>T: ErrAllProvidersFailed → 502 provider_error
+    end
+```
+
+### 24. Failure after output began
+
+The caller already has part of the answer and a 200 status. Another provider would start the
+answer over, so the gateway reports the failure inside the stream and stops.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Caller
+    participant T as transport (sseOutput)
+    participant S as app.Service
+    participant P as Provider
+    participant PG as Postgres
+
+    P-->>S: data: chunk "half an ans"
+    S->>T: Write — caller receives it
+    P--xS: connection drops (no finish_reason, no [DONE]) → io.ErrUnexpectedEOF
+    S->>PG: INSERT llm_usage (interrupted, tokens estimated from the text seen)
+    S-->>T: error, began = true — no fallback
+    T-->>C: data: {"error": {"code": "provider_error", ...}} — and no [DONE]
+```
+
+### 25. Caller cancels
+
+Cancellation travels down the context: the caller's connection closes, the request context is
+cancelled, and the provider request (made with a child context) is aborted, so the model stops
+generating and billing.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Caller
+    participant T as net/http + transport
+    participant S as app.Service
+    participant P as Provider
+    participant PG as Postgres
+
+    C->>T: streaming request
+    T-->>C: first chunks
+    C--xT: closes the connection (user left, timeout on the caller's side)
+    T->>S: r.Context() cancelled
+    S->>P: attempt context cancelled → HTTP request aborted
+    P-->>P: stops generating
+    S->>PG: INSERT llm_usage (cancelled) — with a context that outlives the request
+    Note over T: Nothing is written back: nobody is listening.
+```
+
+### 26. Embeddings
+
+`transport/http.go` (`embeddings`), `app/service.go` (`Embed`). An embedding alias has exactly
+one route: vectors from two models are not comparable, so there is no fallback.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Caller (RAG, Part 4)
+    participant T as transport
+    participant S as app.Service
+    participant P as Provider (Ollama or NVIDIA)
+    participant PG as Postgres
+
+    C->>T: POST /v1/embeddings {model: "embed-local", input: [...], input_type?, encoding_format?}
+    T->>S: Embed(call, request)
+    S->>S: 1-256 inputs, alias is an embedding alias, AI policy, rate limit
+    S->>P: POST /v1/embeddings (NVIDIA also gets input_type: query | passage)
+    P-->>S: vectors with index, usage
+    S->>S: order vectors by index, their count must equal the input count
+    S->>PG: INSERT llm_usage (embedding)
+    T-->>C: {data: [{index, embedding}]} — floats, or base64 little-endian float32 (OpenAI's Python client asks for base64)
+```
+
+### 27. Rate limit
+
+`gateway/internal/llm/infra/ratelimit.go`. A token bucket per workspace, run as one Lua script
+so concurrent requests through several gateway instances cannot both take the last token.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as app.Service
+    participant R as Redis (Lua script)
+
+    S->>R: EVALSHA bucket "gateway:ratelimit:{workspace}" capacity=20 rate=1/s
+    R->>R: now = TIME (Redis clock, same for every gateway instance)
+    R->>R: tokens = min(capacity, tokens + elapsed × rate)
+    alt tokens ≥ 1
+        R->>R: tokens -= 1, save, PEXPIRE until a full refill
+        R-->>S: {1, 0} allowed
+    else
+        R-->>S: {0, ms until one token} → 429, Retry-After
+    end
+    Note over S,R: Redis unreachable → error → 500. Fail closed: no limiter, no model calls.
+```
+
+### 28. Change AI settings
+
+`api/internal/workspace/{domain,app,infra,transport}/ai.go`. The Core API owns the setting; the
+gateway reads it on every call, so a change applies to the next model call.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Admin's browser
+    participant API as Core API
+    participant PG as Postgres
+    participant GW as LLM Gateway
+
+    B->>API: PUT /v1/workspaces/{ws}/ai-settings {"external_providers": ["nvidia"]}
+    API->>PG: caller's role in the workspace
+    alt not a member
+        API-->>B: 404
+    else staff or client
+        API-->>B: 403 (staff may GET the settings, clients may not)
+    end
+    API->>API: every name a known external provider? sort, remove duplicates — else 400
+    API->>PG: INSERT ... ON CONFLICT (workspace_id) DO UPDATE external_providers, updated_by, updated_at
+    API-->>B: 200 {external_providers, available_external_providers, updated_at}
+    Note over GW,PG: Next model call for this workspace: the gateway reads the new list, so nvidia routes become usable (or, after removal, are skipped at once).
 ```

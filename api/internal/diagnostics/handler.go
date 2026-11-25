@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 
-	"enclave/api/internal/platform/httpserver"
 	ragv1 "enclave/gen/go/enclave/rag/v1"
+	"enclave/internal/platform/httpserver"
 )
 
 // RAGPinger is the one capability the debug handler needs. *ragclient.Client satisfies it,

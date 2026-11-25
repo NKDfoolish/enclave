@@ -1,0 +1,8 @@
+{
+  "providers": [
+    { "name": "fake", "kind": "openai", "base_url": "http://localhost:8099/v1", "external": false }
+  ],
+  "models": [
+    { "alias": "bench", "kind": "chat", "routes": [{ "provider": "fake", "model": "fake-model" }] }
+  ]
+}

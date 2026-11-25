@@ -20,14 +20,18 @@ backend is written in it.
 
 ### Packages and layout
 
-- Layout follows [ADR 0001](adr/0001-go-code-structure.md): bounded contexts under
-  `api/internal/<context>/` with `domain/`, `app/`, `infra/`, `transport/` inside, and shared
-  plumbing under `api/internal/platform/`.
+- Layout follows [ADR 0001](adr/0001-go-code-structure.md): each service (`api/`, `gateway/`)
+  has bounded contexts under `<service>/internal/<context>/` with `domain/`, `app/`, `infra/`,
+  `transport/` inside. Plumbing shared by services lives in the root `internal/platform/`; a
+  package moves there when a second service needs it.
 - Package names are short, lowercase, singular nouns: `workspace`, `identity`, `httpserver`.
   Never `utils`, `common`, `helpers`, `models`, `base`.
 - Dependencies point inward: `transport -> app -> domain <- infra`. `domain` imports no other
   layer. Contexts talk to each other through their `app` APIs, never through each other's tables.
-- `cmd/api` is the only place that constructs concrete implementations and wires them together.
+- Each service's `cmd/` package is the only place that constructs concrete implementations and
+  wires them together.
+- Use a provider's official SDK where one exists for the language (the gateway's Anthropic
+  adapter); write plain `net/http` for open wire formats shared by many providers (OpenAI's).
 
 ### Naming
 

@@ -24,16 +24,16 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"enclave/api/internal/config"
 	documentapp "enclave/api/internal/document/app"
 	documentinfra "enclave/api/internal/document/infra"
 	identityapp "enclave/api/internal/identity/app"
 	identityinfra "enclave/api/internal/identity/infra"
-	"enclave/api/internal/platform/config"
-	"enclave/api/internal/platform/objectstore"
-	"enclave/api/internal/platform/outbox"
-	"enclave/api/internal/platform/testenv"
 	workspaceapp "enclave/api/internal/workspace/app"
 	workspaceinfra "enclave/api/internal/workspace/infra"
+	"enclave/internal/platform/objectstore"
+	"enclave/internal/platform/outbox"
+	"enclave/internal/platform/testenv"
 )
 
 const testPassword = "correct horse battery staple"

@@ -19,9 +19,9 @@ import (
 
 	"github.com/google/uuid"
 
+	"enclave/api/internal/authn"
 	"enclave/api/internal/identity/domain"
-	"enclave/api/internal/platform/authn"
-	"enclave/api/internal/platform/email"
+	"enclave/internal/platform/email"
 )
 
 const (

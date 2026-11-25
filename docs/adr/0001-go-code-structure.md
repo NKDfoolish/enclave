@@ -19,22 +19,33 @@ Two layouts were considered:
 Use option 2.
 
 ```text
-api/internal/
-├── <context>/            e.g. identity, workspace, document
-│   ├── domain/           entities, value objects, business rules, domain errors
-│   ├── app/              use cases + the Repository interface they consume
-│   ├── infra/            Postgres etc.; implements app's Repository
-│   └── transport/        HTTP handlers; read request -> call app -> write response
-└── platform/             shared plumbing with no business rules
-    ├── config/  httpserver/  diagnostics/  ragclient/
+api/                      Core API service
+├── cmd/api/              composition root
+└── internal/
+    ├── <context>/        e.g. identity, workspace, document
+    │   ├── domain/       entities, value objects, business rules, domain errors
+    │   ├── app/          use cases + the Repository interface they consume
+    │   ├── infra/        Postgres etc.; implements app's Repository
+    │   └── transport/    HTTP handlers; read request -> call app -> write response
+    └── config/ authn/ diagnostics/ ragclient/    plumbing only the Core API uses
+gateway/                  LLM Gateway service (Part 3), same shape: cmd/gateway, internal/llm/...
+internal/platform/        plumbing shared by services, no business rules:
+                          httpserver, postgres, redis, env, testenv, objectstore, outbox, ...
+migrations/               one schema history for the shared database
 ```
 
 Dependency rule: `transport -> app -> domain <- infra`. The `Repository` interface is declared in
 `app`, next to the code that consumes it (Go convention), and `infra` satisfies it implicitly; `app`
 never imports `infra`. `domain` imports nothing from other layers.
-`cmd/api` is the only place that wires concrete implementations together.
+Each service's `cmd/` package is the only place that wires concrete implementations together.
 
-HTTP uses `net/http` with hand-written middleware (`platform/httpserver`) instead of a framework.
+HTTP uses `net/http` with hand-written middleware (`internal/platform/httpserver`) instead of a
+framework.
+
+Go's `internal/` rule decides what is shared: code under `api/internal` can only be imported by the
+Core API, code under the root `internal/` by every service in the module. A package moves to the
+root when a second service needs it (Part 3 moved `httpserver`, `postgres`, `redis` and `testenv`
+there, with the generic packages next to them, and added `env`).
 
 ## Consequences
 

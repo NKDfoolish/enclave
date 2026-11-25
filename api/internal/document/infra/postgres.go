@@ -15,7 +15,7 @@ import (
 
 	"enclave/api/internal/document/app"
 	"enclave/api/internal/document/domain"
-	"enclave/api/internal/platform/outbox"
+	"enclave/internal/platform/outbox"
 )
 
 type Repository struct {

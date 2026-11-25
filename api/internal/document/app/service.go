@@ -18,11 +18,11 @@ import (
 
 	"github.com/google/uuid"
 
+	"enclave/api/internal/authn"
 	"enclave/api/internal/document/domain"
-	"enclave/api/internal/platform/authn"
-	"enclave/api/internal/platform/objectstore"
-	"enclave/api/internal/platform/outbox"
 	workspacedomain "enclave/api/internal/workspace/domain"
+	"enclave/internal/platform/objectstore"
+	"enclave/internal/platform/outbox"
 )
 
 const (

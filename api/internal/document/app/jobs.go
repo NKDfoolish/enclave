@@ -12,8 +12,8 @@ import (
 	"github.com/google/uuid"
 
 	"enclave/api/internal/document/domain"
-	"enclave/api/internal/platform/objectstore"
-	"enclave/api/internal/platform/outbox"
+	"enclave/internal/platform/objectstore"
+	"enclave/internal/platform/outbox"
 )
 
 // Outbox job kinds handled by this context.
