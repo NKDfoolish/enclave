@@ -7,6 +7,18 @@ dependencies = [
     # Must be >= the plugin versions in buf.gen.yaml.
     "grpcio>=1.73.1",
     "protobuf>=6.31.1",
+    # Model calls go through the LLM Gateway, which speaks OpenAI's API. Ragas (eval group)
+    # needs instructor, which supports openai 2.x only.
+    "openai>=2.0",
+    # Same minor version as the Qdrant server in compose.yaml (v1.15).
+    "qdrant-client>=1.15.1,<1.16",
+    "redis>=8.1.0",
+    "psycopg[binary]>=3.3.8",
+    "psycopg-pool>=3.2.6",
+    "boto3>=1.44.0",
+    # Text extraction. Light on purpose: docling needs PyTorch and model downloads (ADR 0005).
+    "pypdf>=7.0.1",
+    "python-docx>=1.2.0",
 ]
 
 [dependency-groups]
@@ -14,10 +26,18 @@ dev = [
     "pytest>=8.4",
     "ruff>=0.12",
 ]
+# Answer-quality metrics (Ragas) for `make rag-eval`. Not needed to run the service.
+eval = [
+    "ragas>=0.4.3",
+    # ragas 0.4.3 imports langchain_community.chat_models.vertexai, removed in 0.4.2.
+    "langchain-community==0.4.1",
+]
 
 [tool.uv]
 # Run as an application, not an installable package; imports resolve via pythonpath below.
 package = false
+# Resolve only releases at least two weeks old, transitive dependencies included.
+exclude-newer = "2026-11-11T00:00:00Z"
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "gen"]

@@ -70,6 +70,24 @@
         <button id="more-documents" type="button" class="secondary" hidden>Load more</button>
       </div>
 
+      <div id="chat-panel">
+        <h3>Ask the documents</h3>
+        <p class="muted">Answers use only the documents you can read, and cite them. Your conversations are private to you.</p>
+        <div class="chat">
+          <aside>
+            <button id="new-conversation" type="button" class="secondary">New conversation</button>
+            <ul id="conversation-list" class="list"></ul>
+          </aside>
+          <section>
+            <div id="chat-messages" class="chat-messages"></div>
+            <form id="ask-form" class="inline">
+              <label class="grow">Question <input name="question" maxlength="4000" required autocomplete="off"></label>
+              <button type="submit">Ask</button>
+            </form>
+          </section>
+        </div>
+      </div>
+
       <div id="members-panel" hidden>
         <h3>Members</h3>
         <table>

@@ -22,3 +22,6 @@ __pycache__/
 .terraform/
 *.tfstate
 *.tfstate.*
+
+# RAG evaluation output (make rag-eval)
+rag/eval/results/

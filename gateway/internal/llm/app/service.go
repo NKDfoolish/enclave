@@ -243,8 +243,10 @@ func (s *Service) Embed(ctx context.Context, call domain.Call, req domain.Embedd
 	defer cancel()
 
 	route := routes[0] // embedding aliases have exactly one route (see domain.NewCatalog)
+	providerReq := req
+	providerReq.Inputs = route.PrefixInputs(req.Inputs, req.InputType)
 	started := s.now()
-	result, err := s.embedders[route.Provider.Name].Embed(ctx, route.Model, req)
+	result, err := s.embedders[route.Provider.Name].Embed(ctx, route.Model, providerReq)
 	if err == nil && len(result.Vectors) != len(req.Inputs) {
 		err = fmt.Errorf("provider %s returned %d vectors for %d inputs", route.Provider.Name, len(result.Vectors), len(req.Inputs))
 	}

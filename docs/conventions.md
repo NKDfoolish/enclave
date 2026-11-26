@@ -100,7 +100,11 @@ backend is written in it.
 
 - Type hints on every function signature; small functions; no metaprogramming.
 - `ruff` decides formatting and import order.
-- Same layering idea as Go when the service grows: `domain/`, `app/`, `infra/`, `transport/`.
+- Same layering as Go (`rag/src/rag/`): `domain/` (pure logic and dataclasses), `app/` (use
+  cases), `infra/` (Postgres, Redis, Qdrant, storage, gateway, file formats), `transport/`
+  (gRPC). `app` declares what it needs as `typing.Protocol`s and never imports `infra`; the
+  entry points (`main.py`, `worker.py`) wire concrete classes in, like `cmd/` in Go.
+- Errors that cross layers (`ParseError`, `GatewayError` with `retryable`) live in `domain`.
 
 ## Tests
 

@@ -1,4 +1,4 @@
-// Enclave web UI: login, workspaces, members and invitations.
+// Enclave web UI: login, workspaces, members, invitations, documents and questions.
 // Plain DOM APIs only. User data is always inserted with textContent, never innerHTML,
 // so names and emails cannot inject markup (XSS).
 
@@ -7,6 +7,7 @@ const $ = (id) => document.getElementById(id);
 
 let currentUser = null;
 let currentWorkspace = null;
+let currentConversation = null;
 let pendingInviteToken = readInviteToken();
 
 class ApiError extends Error {
@@ -250,6 +251,8 @@ async function openWorkspace(workspaceID) {
   if (isAdmin) {
     await loadInvitations();
   }
+  currentConversation = null;
+  await loadConversations();
   showView("workspace-view");
 }
 
@@ -298,6 +301,14 @@ function documentRow(doc) {
   status.append(element("span", doc.status, "badge"));
   if (doc.failure_reason) {
     status.append(element("div", doc.failure_reason, "muted"));
+  }
+  // Whether questions can find the document yet (Part 4).
+  if (doc.index_status) {
+    const label = { pending: "indexing…", indexed: "searchable", failed: "not searchable" }[doc.index_status];
+    status.append(element("div", label, "muted"));
+    if (doc.index_error) {
+      status.append(element("div", doc.index_error, "muted"));
+    }
   }
 
   const actions = element("td");
@@ -381,7 +392,9 @@ $("upload-form").addEventListener("submit", (event) => {
 // While any listed document is still uploading or processing, refresh the list shortly.
 function scheduleDocumentsPoll(documents) {
   clearTimeout(documentsPoll);
-  const pending = documents.some((d) => d.status === "uploading" || d.status === "processing");
+  const pending = documents.some(
+    (d) => d.status === "uploading" || d.status === "processing" || d.index_status === "pending",
+  );
   if (pending && currentWorkspace) {
     const workspaceID = currentWorkspace.id;
     documentsPoll = setTimeout(() => {
@@ -535,3 +548,146 @@ window.addEventListener("hashchange", () => {
 });
 
 start();
+
+// --- Questions and answers --------------------------------------------------------------
+// Answers stream as Server-Sent Events from POST .../messages: "sources", many "delta",
+// then "done" with the stored answer (or "error"). EventSource only does GET, so the stream
+// is read from fetch().
+
+function conversationsPath(suffix = "") {
+  return `/v1/workspaces/${currentWorkspace.id}/conversations${suffix}`;
+}
+
+async function loadConversations() {
+  const { conversations } = await api("GET", conversationsPath());
+  const list = $("conversation-list");
+  list.replaceChildren();
+  for (const conversation of conversations) {
+    const item = element("li");
+    const open = button(conversation.title || "New conversation", () => attempt(() => openConversation(conversation.id)), "link");
+    if (conversation.id === currentConversation) {
+      open.classList.add("active");
+    }
+    item.append(open);
+    list.append(item);
+  }
+  if (!currentConversation) {
+    $("chat-messages").replaceChildren(element("p", "Ask a question about this workspace's documents.", "muted"));
+  }
+}
+
+async function openConversation(conversationID) {
+  const { messages } = await api("GET", conversationsPath(`/${conversationID}`));
+  currentConversation = conversationID;
+  $("chat-messages").replaceChildren(...messages.map(messageNode));
+  await loadConversations();
+}
+
+function messageNode(message) {
+  const node = element("div", "", `message ${message.role}`);
+  const text = element("p", message.content, message.hidden ? "muted" : "");
+  node.append(text);
+  node.append(citationList(message.citations ?? []));
+  return node;
+}
+
+function citationList(citations) {
+  const list = element("ol", "", "citations");
+  for (const citation of citations) {
+    const item = element("li");
+    item.value = citation.number;
+    const link = element("a", citation.title);
+    // A plain GET: the API checks access again and redirects to a short-lived download URL.
+    link.href = documentsPath(`/${citation.document_id}/download`);
+    const where = [citation.page ? `page ${citation.page}` : "", citation.section ?? ""].filter(Boolean).join(", ");
+    item.append(link);
+    if (where) {
+      item.append(element("span", ` — ${where}`, "muted"));
+    }
+    if (citation.snippet) {
+      item.title = citation.snippet;
+    }
+    list.append(item);
+  }
+  return list;
+}
+
+$("new-conversation").addEventListener("click", () =>
+  attempt(async () => {
+    currentConversation = null;
+    await loadConversations();
+    $("ask-form").elements.question.focus();
+  }),
+);
+
+$("ask-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = event.target;
+  const question = form.elements.question.value.trim();
+  if (!question) {
+    return;
+  }
+  form.elements.question.value = "";
+  attempt(() => ask(question));
+});
+
+async function ask(question) {
+  if (!currentConversation) {
+    currentConversation = (await api("POST", conversationsPath())).id;
+    $("chat-messages").replaceChildren();
+  }
+  const messages = $("chat-messages");
+  messages.append(messageNode({ role: "user", content: question }));
+  const answer = element("div", "", "message assistant");
+  const text = element("p", "Searching…", "muted");
+  answer.append(text);
+  messages.append(answer);
+
+  let started = false;
+  await streamAnswer(conversationsPath(`/${currentConversation}/messages`), question, (name, data) => {
+    if (name === "delta") {
+      if (!started) {
+        text.textContent = "";
+        text.className = "";
+        started = true;
+      }
+      text.textContent += data.text;
+    } else if (name === "done") {
+      answer.replaceWith(messageNode(data.message));
+    } else if (name === "error") {
+      text.textContent = data.error.message;
+      text.className = "muted";
+    }
+  });
+  await loadConversations();
+}
+
+async function streamAnswer(path, question, onEvent) {
+  let response = await send("POST", path, { content: question });
+  if (response.status === 401 && (await refreshTokens())) {
+    response = await send("POST", path, { content: question });
+  }
+  if (!response.headers.get("Content-Type")?.startsWith("text/event-stream")) {
+    const data = await response.json().catch(() => null);
+    throw new ApiError(response.status, data?.error?.message ?? response.statusText);
+  }
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) {
+      return;
+    }
+    buffer += value;
+    let end;
+    while ((end = buffer.indexOf("\n\n")) >= 0) {
+      const block = buffer.slice(0, end);
+      buffer = buffer.slice(end + 2);
+      const name = block.match(/^event: (.*)$/m)?.[1];
+      const data = block.match(/^data: (.*)$/m)?.[1];
+      if (name && data) {
+        onEvent(name, JSON.parse(data));
+      }
+    }
+  }
+}

@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/url"
 
+	chatapp "enclave/api/internal/chat/app"
+	chattransport "enclave/api/internal/chat/transport"
 	"enclave/api/internal/config"
 	"enclave/api/internal/diagnostics"
 	documentapp "enclave/api/internal/document/app"
@@ -22,6 +24,7 @@ type services struct {
 	identity  *identityapp.Service
 	workspace *workspaceapp.Service
 	document  *documentapp.Service
+	chat      *chatapp.Service
 	rag       diagnostics.RAGPinger
 }
 
@@ -38,6 +41,7 @@ func routes(cfg config.Config, logger *slog.Logger, svc services) http.Handler {
 	identity.RegisterRoutes(mux)
 	workspacetransport.NewHandler(svc.workspace, logger).RegisterRoutes(mux, identity.RequireAuth)
 	documenttransport.NewHandler(svc.document, logger).RegisterRoutes(mux, identity.RequireAuth)
+	chattransport.NewHandler(svc.chat, logger).RegisterRoutes(mux, identity.RequireAuth)
 
 	// Unknown /v1 paths get a JSON 404 instead of falling through to the web UI.
 	mux.HandleFunc("/v1/", func(w http.ResponseWriter, r *http.Request) {

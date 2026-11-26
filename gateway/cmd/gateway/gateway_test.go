@@ -333,6 +333,20 @@ func TestChatCompletion(t *testing.T) {
 		}
 	})
 
+	t.Run("json_object response format is accepted, other formats are not", func(t *testing.T) {
+		body := chatBody("chat-local-first", false)
+		body["response_format"] = map[string]string{"type": "json_object"}
+		status, _, _ := env.sendJSON(t, request{path: "/v1/chat/completions", body: body, workspace: workspace, token: serviceToken})
+		if status != http.StatusOK {
+			t.Fatalf("json_object: status %d", status)
+		}
+		body["response_format"] = map[string]string{"type": "json_schema"}
+		status, _, _ = env.sendJSON(t, request{path: "/v1/chat/completions", body: body, workspace: workspace, token: serviceToken})
+		if status != http.StatusBadRequest {
+			t.Fatalf("json_schema: status %d", status)
+		}
+	})
+
 	t.Run("unknown model", func(t *testing.T) {
 		status, _, body := env.sendJSON(t, request{path: "/v1/chat/completions", body: chatBody("gpt-9", false), workspace: workspace, token: serviceToken})
 		if status != http.StatusNotFound || body["error"].(map[string]any)["code"] != "model_not_found" {

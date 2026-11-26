@@ -18,12 +18,15 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	chatapp "enclave/api/internal/chat/app"
+	chatinfra "enclave/api/internal/chat/infra"
 	"enclave/api/internal/config"
 	documentapp "enclave/api/internal/document/app"
 	documentinfra "enclave/api/internal/document/infra"
@@ -42,11 +45,39 @@ const testPassword = "correct horse battery staple"
 const testMaxDocumentBytes = 1 << 20
 
 type testEnv struct {
-	server    *httptest.Server
-	pool      *pgxpool.Pool
-	store     *objectstore.Store
-	documents *documentapp.Service
-	worker    *outbox.Worker
+	server      *httptest.Server
+	pool        *pgxpool.Pool
+	store       *objectstore.Store
+	documents   *documentapp.Service
+	worker      *outbox.Worker
+	searchIndex *recordingIndex
+	answerer    *fakeAnswerer
+}
+
+// recordingIndex stands in for the RAG service's ingestion queue and records which
+// documents it was asked to sync.
+type recordingIndex struct {
+	mu        sync.Mutex
+	requested []uuid.UUID
+}
+
+func (r *recordingIndex) RequestSync(_ context.Context, documentID uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.requested = append(r.requested, documentID)
+	return nil
+}
+
+func (r *recordingIndex) count(documentID uuid.UUID) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for _, id := range r.requested {
+		if id == documentID {
+			n++
+		}
+	}
+	return n
 }
 
 func newTestEnv(t *testing.T) *testEnv {
@@ -66,7 +97,9 @@ func newTestEnv(t *testing.T) *testEnv {
 		SecureCookies:   false,
 	}
 	workspaces := workspaceapp.NewService(workspaceinfra.NewRepository(pool))
-	documents := documentapp.NewService(workspaces, documentinfra.NewRepository(pool), store, testMaxDocumentBytes)
+	searchIndex := &recordingIndex{}
+	documents := documentapp.NewService(workspaces, documentinfra.NewRepository(pool), store, searchIndex, testMaxDocumentBytes)
+	answerer := &fakeAnswerer{}
 	svc := services{
 		identity: identityapp.NewService(
 			identityinfra.NewRepository(pool),
@@ -75,6 +108,7 @@ func newTestEnv(t *testing.T) *testEnv {
 		),
 		workspace: workspaces,
 		document:  documents,
+		chat:      chatapp.NewService(workspaces, documents, answerer, chatinfra.NewRepository(pool)),
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	server := httptest.NewServer(routes(cfg, logger, svc))
@@ -83,8 +117,12 @@ func newTestEnv(t *testing.T) *testEnv {
 	worker := outbox.NewWorker(pool, logger)
 	worker.Handle(documentapp.JobValidateUpload, documents.ValidateUpload)
 	worker.Handle(documentapp.JobDeleteObject, documents.DeleteObject)
+	worker.Handle(documentapp.JobSyncSearchIndex, documents.SyncSearchIndex)
 
-	return &testEnv{server: server, pool: pool, store: store, documents: documents, worker: worker}
+	return &testEnv{
+		server: server, pool: pool, store: store, documents: documents, worker: worker,
+		searchIndex: searchIndex, answerer: answerer,
+	}
 }
 
 // runJobs runs queued background jobs until none are due, like the worker in production.

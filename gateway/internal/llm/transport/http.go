@@ -78,6 +78,11 @@ type chatCompletionRequest struct {
 	// MaxCompletionTokens is the newer name OpenAI's clients send; it wins when both are set.
 	MaxCompletionTokens *int     `json:"max_completion_tokens"`
 	Temperature         *float64 `json:"temperature"`
+	TopP                *float64 `json:"top_p"`
+	// ResponseFormat {"type": "json_object"} asks for JSON output; "text" is the default.
+	ResponseFormat *struct {
+		Type string `json:"type"`
+	} `json:"response_format"`
 }
 
 func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
@@ -91,7 +96,17 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req := domain.ChatRequest{Model: body.Model, MaxTokens: body.MaxTokens, Temperature: body.Temperature}
+	req := domain.ChatRequest{Model: body.Model, MaxTokens: body.MaxTokens, Temperature: body.Temperature, TopP: body.TopP}
+	if body.ResponseFormat != nil {
+		switch body.ResponseFormat.Type {
+		case "text":
+		case "json_object":
+			req.JSONOutput = true
+		default:
+			httpserver.WriteError(w, r, http.StatusBadRequest, "invalid_request", "response_format.type must be text or json_object")
+			return
+		}
+	}
 	if body.MaxCompletionTokens != nil {
 		req.MaxTokens = body.MaxCompletionTokens
 	}

@@ -45,8 +45,13 @@ type ChatRequest struct {
 	Messages []Message
 	// MaxTokens caps the answer length; nil lets the provider (or adapter) choose.
 	MaxTokens *int
-	// Temperature is passed to providers that accept it; nil uses the provider default.
+	// Temperature and TopP are passed to providers that accept them; nil uses the provider
+	// default.
 	Temperature *float64
+	TopP        *float64
+	// JSONOutput asks for a single JSON object as the answer (OpenAI's "json_object" response
+	// format). Providers without such a mode get only the instruction in the prompt.
+	JSONOutput bool
 }
 
 // Validate checks what every provider would reject anyway, so a bad request fails fast with
@@ -79,6 +84,9 @@ func (r ChatRequest) Validate() error {
 	}
 	if r.Temperature != nil && (*r.Temperature < 0 || *r.Temperature > 2) {
 		return invalid("temperature must be between 0 and 2")
+	}
+	if r.TopP != nil && (*r.TopP <= 0 || *r.TopP > 1) {
+		return invalid("top_p must be greater than 0 and at most 1")
 	}
 	return nil
 }

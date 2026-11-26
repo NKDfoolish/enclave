@@ -7,7 +7,10 @@ from enclave.rag.v1 import rag_pb2 as enclave_dot_rag_dot_v1_dot_rag__pb2
 
 class RagServiceStub(object):
     """RagService answers questions from permitted workspace documents.
-    Part 0 only exposes Ping to prove the Go -> Python gRPC path works.
+
+    The Core API calls it after checking the user's membership; it passes the workspace and the
+    document visibilities the user may read. The RAG service never decides access by itself: it
+    filters by these values and re-checks every retrieved document against Postgres.
     """
 
     def __init__(self, channel):
@@ -21,15 +24,32 @@ class RagServiceStub(object):
                 request_serializer=enclave_dot_rag_dot_v1_dot_rag__pb2.PingRequest.SerializeToString,
                 response_deserializer=enclave_dot_rag_dot_v1_dot_rag__pb2.PingResponse.FromString,
                 _registered_method=True)
+        self.Answer = channel.unary_stream(
+                '/enclave.rag.v1.RagService/Answer',
+                request_serializer=enclave_dot_rag_dot_v1_dot_rag__pb2.AnswerRequest.SerializeToString,
+                response_deserializer=enclave_dot_rag_dot_v1_dot_rag__pb2.AnswerResponse.FromString,
+                _registered_method=True)
 
 
 class RagServiceServicer(object):
     """RagService answers questions from permitted workspace documents.
-    Part 0 only exposes Ping to prove the Go -> Python gRPC path works.
+
+    The Core API calls it after checking the user's membership; it passes the workspace and the
+    document visibilities the user may read. The RAG service never decides access by itself: it
+    filters by these values and re-checks every retrieved document against Postgres.
     """
 
     def Ping(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """Ping proves the Go -> Python gRPC path works.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def Answer(self, request, context):
+        """Answer streams an answer: first the sources found, then the text as the model writes it,
+        then which sources the answer cited.
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -42,6 +62,11 @@ def add_RagServiceServicer_to_server(servicer, server):
                     request_deserializer=enclave_dot_rag_dot_v1_dot_rag__pb2.PingRequest.FromString,
                     response_serializer=enclave_dot_rag_dot_v1_dot_rag__pb2.PingResponse.SerializeToString,
             ),
+            'Answer': grpc.unary_stream_rpc_method_handler(
+                    servicer.Answer,
+                    request_deserializer=enclave_dot_rag_dot_v1_dot_rag__pb2.AnswerRequest.FromString,
+                    response_serializer=enclave_dot_rag_dot_v1_dot_rag__pb2.AnswerResponse.SerializeToString,
+            ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
             'enclave.rag.v1.RagService', rpc_method_handlers)
@@ -52,7 +77,10 @@ def add_RagServiceServicer_to_server(servicer, server):
  # This class is part of an EXPERIMENTAL API.
 class RagService(object):
     """RagService answers questions from permitted workspace documents.
-    Part 0 only exposes Ping to prove the Go -> Python gRPC path works.
+
+    The Core API calls it after checking the user's membership; it passes the workspace and the
+    document visibilities the user may read. The RAG service never decides access by itself: it
+    filters by these values and re-checks every retrieved document against Postgres.
     """
 
     @staticmethod
@@ -72,6 +100,33 @@ class RagService(object):
             '/enclave.rag.v1.RagService/Ping',
             enclave_dot_rag_dot_v1_dot_rag__pb2.PingRequest.SerializeToString,
             enclave_dot_rag_dot_v1_dot_rag__pb2.PingResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Answer(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/enclave.rag.v1.RagService/Answer',
+            enclave_dot_rag_dot_v1_dot_rag__pb2.AnswerRequest.SerializeToString,
+            enclave_dot_rag_dot_v1_dot_rag__pb2.AnswerResponse.FromString,
             options,
             channel_credentials,
             insecure,

@@ -5,9 +5,17 @@ package enclave.rag.v1;
 option go_package = "enclave/gen/go/enclave/rag/v1;ragv1";
 
 // RagService answers questions from permitted workspace documents.
-// Part 0 only exposes Ping to prove the Go -> Python gRPC path works.
+//
+// The Core API calls it after checking the user's membership; it passes the workspace and the
+// document visibilities the user may read. The RAG service never decides access by itself: it
+// filters by these values and re-checks every retrieved document against Postgres.
 service RagService {
+  // Ping proves the Go -> Python gRPC path works.
   rpc Ping(PingRequest) returns (PingResponse);
+
+  // Answer streams an answer: first the sources found, then the text as the model writes it,
+  // then which sources the answer cited.
+  rpc Answer(AnswerRequest) returns (stream AnswerResponse);
 }
 
 message PingRequest {
@@ -19,4 +27,55 @@ message PingResponse {
   string message = 1;
   // Name of the service that answered, e.g. "rag".
   string service = 2;
+}
+
+message AnswerRequest {
+  string workspace_id = 1;
+  // Document visibilities the user may read: "internal", "client_common".
+  repeated string visibilities = 2;
+  string question = 3;
+  // Earlier turns of the conversation, oldest first, already filtered by the Core API so no
+  // answer from a source the user can no longer read is included.
+  repeated Turn history = 4;
+  // Correlates logs across the Core API, RAG and the gateway.
+  string request_id = 5;
+}
+
+message Turn {
+  // "user" or "assistant".
+  string role = 1;
+  string content = 2;
+}
+
+// AnswerResponse is one event of the answer stream.
+message AnswerResponse {
+  oneof event {
+    Sources sources = 1;
+    // A piece of the answer text, in order.
+    string delta = 2;
+    Done done = 3;
+  }
+}
+
+// Sources are the document passages given to the model, numbered as the answer cites them
+// ("[1]", "[2]"). An empty list means nothing relevant was found.
+message Sources {
+  repeated Source sources = 1;
+}
+
+message Source {
+  int32 number = 1;
+  string document_id = 2;
+  string title = 3;
+  // 1-based page for PDFs, 0 when the format has no pages.
+  int32 page = 4;
+  // Heading path such as "Refunds > Exceptions", empty when the passage has none.
+  string section = 5;
+  // The start of the passage, for display.
+  string snippet = 6;
+}
+
+message Done {
+  // Numbers of the sources the answer cites. Empty when the answer cites none.
+  repeated int32 cited = 1;
 }

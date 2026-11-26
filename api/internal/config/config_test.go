@@ -10,6 +10,7 @@ import (
 
 func setRequired(t *testing.T) {
 	t.Helper()
+	t.Setenv("RAG_SERVICE_TOKEN", "test-secret")
 	t.Setenv("DATABASE_URL", "postgres://localhost/enclave")
 	t.Setenv("REDIS_URL", "redis://localhost:6380/0")
 	t.Setenv("API_JWT_SIGNING_KEY", base64.StdEncoding.EncodeToString(make([]byte, ed25519.SeedSize)))

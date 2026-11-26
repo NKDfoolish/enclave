@@ -119,6 +119,417 @@ func (x *PingResponse) GetService() string {
 	return ""
 }
 
+type AnswerRequest struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	// Document visibilities the user may read: "internal", "client_common".
+	Visibilities []string `protobuf:"bytes,2,rep,name=visibilities,proto3" json:"visibilities,omitempty"`
+	Question     string   `protobuf:"bytes,3,opt,name=question,proto3" json:"question,omitempty"`
+	// Earlier turns of the conversation, oldest first, already filtered by the Core API so no
+	// answer from a source the user can no longer read is included.
+	History []*Turn `protobuf:"bytes,4,rep,name=history,proto3" json:"history,omitempty"`
+	// Correlates logs across the Core API, RAG and the gateway.
+	RequestId     string `protobuf:"bytes,5,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AnswerRequest) Reset() {
+	*x = AnswerRequest{}
+	mi := &file_enclave_rag_v1_rag_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AnswerRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AnswerRequest) ProtoMessage() {}
+
+func (x *AnswerRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_enclave_rag_v1_rag_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AnswerRequest.ProtoReflect.Descriptor instead.
+func (*AnswerRequest) Descriptor() ([]byte, []int) {
+	return file_enclave_rag_v1_rag_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *AnswerRequest) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *AnswerRequest) GetVisibilities() []string {
+	if x != nil {
+		return x.Visibilities
+	}
+	return nil
+}
+
+func (x *AnswerRequest) GetQuestion() string {
+	if x != nil {
+		return x.Question
+	}
+	return ""
+}
+
+func (x *AnswerRequest) GetHistory() []*Turn {
+	if x != nil {
+		return x.History
+	}
+	return nil
+}
+
+func (x *AnswerRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+type Turn struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// "user" or "assistant".
+	Role          string `protobuf:"bytes,1,opt,name=role,proto3" json:"role,omitempty"`
+	Content       string `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Turn) Reset() {
+	*x = Turn{}
+	mi := &file_enclave_rag_v1_rag_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Turn) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Turn) ProtoMessage() {}
+
+func (x *Turn) ProtoReflect() protoreflect.Message {
+	mi := &file_enclave_rag_v1_rag_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Turn.ProtoReflect.Descriptor instead.
+func (*Turn) Descriptor() ([]byte, []int) {
+	return file_enclave_rag_v1_rag_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Turn) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
+func (x *Turn) GetContent() string {
+	if x != nil {
+		return x.Content
+	}
+	return ""
+}
+
+// AnswerResponse is one event of the answer stream.
+type AnswerResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Event:
+	//
+	//	*AnswerResponse_Sources
+	//	*AnswerResponse_Delta
+	//	*AnswerResponse_Done
+	Event         isAnswerResponse_Event `protobuf_oneof:"event"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AnswerResponse) Reset() {
+	*x = AnswerResponse{}
+	mi := &file_enclave_rag_v1_rag_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AnswerResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AnswerResponse) ProtoMessage() {}
+
+func (x *AnswerResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_enclave_rag_v1_rag_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AnswerResponse.ProtoReflect.Descriptor instead.
+func (*AnswerResponse) Descriptor() ([]byte, []int) {
+	return file_enclave_rag_v1_rag_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *AnswerResponse) GetEvent() isAnswerResponse_Event {
+	if x != nil {
+		return x.Event
+	}
+	return nil
+}
+
+func (x *AnswerResponse) GetSources() *Sources {
+	if x != nil {
+		if x, ok := x.Event.(*AnswerResponse_Sources); ok {
+			return x.Sources
+		}
+	}
+	return nil
+}
+
+func (x *AnswerResponse) GetDelta() string {
+	if x != nil {
+		if x, ok := x.Event.(*AnswerResponse_Delta); ok {
+			return x.Delta
+		}
+	}
+	return ""
+}
+
+func (x *AnswerResponse) GetDone() *Done {
+	if x != nil {
+		if x, ok := x.Event.(*AnswerResponse_Done); ok {
+			return x.Done
+		}
+	}
+	return nil
+}
+
+type isAnswerResponse_Event interface {
+	isAnswerResponse_Event()
+}
+
+type AnswerResponse_Sources struct {
+	Sources *Sources `protobuf:"bytes,1,opt,name=sources,proto3,oneof"`
+}
+
+type AnswerResponse_Delta struct {
+	// A piece of the answer text, in order.
+	Delta string `protobuf:"bytes,2,opt,name=delta,proto3,oneof"`
+}
+
+type AnswerResponse_Done struct {
+	Done *Done `protobuf:"bytes,3,opt,name=done,proto3,oneof"`
+}
+
+func (*AnswerResponse_Sources) isAnswerResponse_Event() {}
+
+func (*AnswerResponse_Delta) isAnswerResponse_Event() {}
+
+func (*AnswerResponse_Done) isAnswerResponse_Event() {}
+
+// Sources are the document passages given to the model, numbered as the answer cites them
+// ("[1]", "[2]"). An empty list means nothing relevant was found.
+type Sources struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Sources       []*Source              `protobuf:"bytes,1,rep,name=sources,proto3" json:"sources,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Sources) Reset() {
+	*x = Sources{}
+	mi := &file_enclave_rag_v1_rag_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Sources) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Sources) ProtoMessage() {}
+
+func (x *Sources) ProtoReflect() protoreflect.Message {
+	mi := &file_enclave_rag_v1_rag_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Sources.ProtoReflect.Descriptor instead.
+func (*Sources) Descriptor() ([]byte, []int) {
+	return file_enclave_rag_v1_rag_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *Sources) GetSources() []*Source {
+	if x != nil {
+		return x.Sources
+	}
+	return nil
+}
+
+type Source struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Number     int32                  `protobuf:"varint,1,opt,name=number,proto3" json:"number,omitempty"`
+	DocumentId string                 `protobuf:"bytes,2,opt,name=document_id,json=documentId,proto3" json:"document_id,omitempty"`
+	Title      string                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
+	// 1-based page for PDFs, 0 when the format has no pages.
+	Page int32 `protobuf:"varint,4,opt,name=page,proto3" json:"page,omitempty"`
+	// Heading path such as "Refunds > Exceptions", empty when the passage has none.
+	Section string `protobuf:"bytes,5,opt,name=section,proto3" json:"section,omitempty"`
+	// The start of the passage, for display.
+	Snippet       string `protobuf:"bytes,6,opt,name=snippet,proto3" json:"snippet,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Source) Reset() {
+	*x = Source{}
+	mi := &file_enclave_rag_v1_rag_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Source) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Source) ProtoMessage() {}
+
+func (x *Source) ProtoReflect() protoreflect.Message {
+	mi := &file_enclave_rag_v1_rag_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Source.ProtoReflect.Descriptor instead.
+func (*Source) Descriptor() ([]byte, []int) {
+	return file_enclave_rag_v1_rag_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *Source) GetNumber() int32 {
+	if x != nil {
+		return x.Number
+	}
+	return 0
+}
+
+func (x *Source) GetDocumentId() string {
+	if x != nil {
+		return x.DocumentId
+	}
+	return ""
+}
+
+func (x *Source) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *Source) GetPage() int32 {
+	if x != nil {
+		return x.Page
+	}
+	return 0
+}
+
+func (x *Source) GetSection() string {
+	if x != nil {
+		return x.Section
+	}
+	return ""
+}
+
+func (x *Source) GetSnippet() string {
+	if x != nil {
+		return x.Snippet
+	}
+	return ""
+}
+
+type Done struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Numbers of the sources the answer cites. Empty when the answer cites none.
+	Cited         []int32 `protobuf:"varint,1,rep,packed,name=cited,proto3" json:"cited,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Done) Reset() {
+	*x = Done{}
+	mi := &file_enclave_rag_v1_rag_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Done) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Done) ProtoMessage() {}
+
+func (x *Done) ProtoReflect() protoreflect.Message {
+	mi := &file_enclave_rag_v1_rag_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Done.ProtoReflect.Descriptor instead.
+func (*Done) Descriptor() ([]byte, []int) {
+	return file_enclave_rag_v1_rag_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *Done) GetCited() []int32 {
+	if x != nil {
+		return x.Cited
+	}
+	return nil
+}
+
 var File_enclave_rag_v1_rag_proto protoreflect.FileDescriptor
 
 const file_enclave_rag_v1_rag_proto_rawDesc = "" +
@@ -128,10 +539,38 @@ const file_enclave_rag_v1_rag_proto_rawDesc = "" +
 	"\amessage\x18\x01 \x01(\tR\amessage\"B\n" +
 	"\fPingResponse\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\x12\x18\n" +
-	"\aservice\x18\x02 \x01(\tR\aservice2O\n" +
+	"\aservice\x18\x02 \x01(\tR\aservice\"\xc1\x01\n" +
+	"\rAnswerRequest\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\"\n" +
+	"\fvisibilities\x18\x02 \x03(\tR\fvisibilities\x12\x1a\n" +
+	"\bquestion\x18\x03 \x01(\tR\bquestion\x12.\n" +
+	"\ahistory\x18\x04 \x03(\v2\x14.enclave.rag.v1.TurnR\ahistory\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x05 \x01(\tR\trequestId\"4\n" +
+	"\x04Turn\x12\x12\n" +
+	"\x04role\x18\x01 \x01(\tR\x04role\x12\x18\n" +
+	"\acontent\x18\x02 \x01(\tR\acontent\"\x92\x01\n" +
+	"\x0eAnswerResponse\x123\n" +
+	"\asources\x18\x01 \x01(\v2\x17.enclave.rag.v1.SourcesH\x00R\asources\x12\x16\n" +
+	"\x05delta\x18\x02 \x01(\tH\x00R\x05delta\x12*\n" +
+	"\x04done\x18\x03 \x01(\v2\x14.enclave.rag.v1.DoneH\x00R\x04doneB\a\n" +
+	"\x05event\";\n" +
+	"\aSources\x120\n" +
+	"\asources\x18\x01 \x03(\v2\x16.enclave.rag.v1.SourceR\asources\"\x9f\x01\n" +
+	"\x06Source\x12\x16\n" +
+	"\x06number\x18\x01 \x01(\x05R\x06number\x12\x1f\n" +
+	"\vdocument_id\x18\x02 \x01(\tR\n" +
+	"documentId\x12\x14\n" +
+	"\x05title\x18\x03 \x01(\tR\x05title\x12\x12\n" +
+	"\x04page\x18\x04 \x01(\x05R\x04page\x12\x18\n" +
+	"\asection\x18\x05 \x01(\tR\asection\x12\x18\n" +
+	"\asnippet\x18\x06 \x01(\tR\asnippet\"\x1c\n" +
+	"\x04Done\x12\x14\n" +
+	"\x05cited\x18\x01 \x03(\x05R\x05cited2\x9a\x01\n" +
 	"\n" +
 	"RagService\x12A\n" +
-	"\x04Ping\x12\x1b.enclave.rag.v1.PingRequest\x1a\x1c.enclave.rag.v1.PingResponseB%Z#enclave/gen/go/enclave/rag/v1;ragv1b\x06proto3"
+	"\x04Ping\x12\x1b.enclave.rag.v1.PingRequest\x1a\x1c.enclave.rag.v1.PingResponse\x12I\n" +
+	"\x06Answer\x12\x1d.enclave.rag.v1.AnswerRequest\x1a\x1e.enclave.rag.v1.AnswerResponse0\x01B%Z#enclave/gen/go/enclave/rag/v1;ragv1b\x06proto3"
 
 var (
 	file_enclave_rag_v1_rag_proto_rawDescOnce sync.Once
@@ -145,19 +584,31 @@ func file_enclave_rag_v1_rag_proto_rawDescGZIP() []byte {
 	return file_enclave_rag_v1_rag_proto_rawDescData
 }
 
-var file_enclave_rag_v1_rag_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_enclave_rag_v1_rag_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_enclave_rag_v1_rag_proto_goTypes = []any{
-	(*PingRequest)(nil),  // 0: enclave.rag.v1.PingRequest
-	(*PingResponse)(nil), // 1: enclave.rag.v1.PingResponse
+	(*PingRequest)(nil),    // 0: enclave.rag.v1.PingRequest
+	(*PingResponse)(nil),   // 1: enclave.rag.v1.PingResponse
+	(*AnswerRequest)(nil),  // 2: enclave.rag.v1.AnswerRequest
+	(*Turn)(nil),           // 3: enclave.rag.v1.Turn
+	(*AnswerResponse)(nil), // 4: enclave.rag.v1.AnswerResponse
+	(*Sources)(nil),        // 5: enclave.rag.v1.Sources
+	(*Source)(nil),         // 6: enclave.rag.v1.Source
+	(*Done)(nil),           // 7: enclave.rag.v1.Done
 }
 var file_enclave_rag_v1_rag_proto_depIdxs = []int32{
-	0, // 0: enclave.rag.v1.RagService.Ping:input_type -> enclave.rag.v1.PingRequest
-	1, // 1: enclave.rag.v1.RagService.Ping:output_type -> enclave.rag.v1.PingResponse
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	3, // 0: enclave.rag.v1.AnswerRequest.history:type_name -> enclave.rag.v1.Turn
+	5, // 1: enclave.rag.v1.AnswerResponse.sources:type_name -> enclave.rag.v1.Sources
+	7, // 2: enclave.rag.v1.AnswerResponse.done:type_name -> enclave.rag.v1.Done
+	6, // 3: enclave.rag.v1.Sources.sources:type_name -> enclave.rag.v1.Source
+	0, // 4: enclave.rag.v1.RagService.Ping:input_type -> enclave.rag.v1.PingRequest
+	2, // 5: enclave.rag.v1.RagService.Answer:input_type -> enclave.rag.v1.AnswerRequest
+	1, // 6: enclave.rag.v1.RagService.Ping:output_type -> enclave.rag.v1.PingResponse
+	4, // 7: enclave.rag.v1.RagService.Answer:output_type -> enclave.rag.v1.AnswerResponse
+	6, // [6:8] is the sub-list for method output_type
+	4, // [4:6] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_enclave_rag_v1_rag_proto_init() }
@@ -165,13 +616,18 @@ func file_enclave_rag_v1_rag_proto_init() {
 	if File_enclave_rag_v1_rag_proto != nil {
 		return
 	}
+	file_enclave_rag_v1_rag_proto_msgTypes[4].OneofWrappers = []any{
+		(*AnswerResponse_Sources)(nil),
+		(*AnswerResponse_Delta)(nil),
+		(*AnswerResponse_Done)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_enclave_rag_v1_rag_proto_rawDesc), len(file_enclave_rag_v1_rag_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

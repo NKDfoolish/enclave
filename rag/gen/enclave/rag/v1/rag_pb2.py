@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x18\x65nclave/rag/v1/rag.proto\x12\x0e\x65nclave.rag.v1\"\'\n\x0bPingRequest\x12\x18\n\x07message\x18\x01 \x01(\tR\x07message\"B\n\x0cPingResponse\x12\x18\n\x07message\x18\x01 \x01(\tR\x07message\x12\x18\n\x07service\x18\x02 \x01(\tR\x07service2O\n\nRagService\x12\x41\n\x04Ping\x12\x1b.enclave.rag.v1.PingRequest\x1a\x1c.enclave.rag.v1.PingResponseB%Z#enclave/gen/go/enclave/rag/v1;ragv1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x18\x65nclave/rag/v1/rag.proto\x12\x0e\x65nclave.rag.v1\"\'\n\x0bPingRequest\x12\x18\n\x07message\x18\x01 \x01(\tR\x07message\"B\n\x0cPingResponse\x12\x18\n\x07message\x18\x01 \x01(\tR\x07message\x12\x18\n\x07service\x18\x02 \x01(\tR\x07service\"\xc1\x01\n\rAnswerRequest\x12!\n\x0cworkspace_id\x18\x01 \x01(\tR\x0bworkspaceId\x12\"\n\x0cvisibilities\x18\x02 \x03(\tR\x0cvisibilities\x12\x1a\n\x08question\x18\x03 \x01(\tR\x08question\x12.\n\x07history\x18\x04 \x03(\x0b\x32\x14.enclave.rag.v1.TurnR\x07history\x12\x1d\n\nrequest_id\x18\x05 \x01(\tR\trequestId\"4\n\x04Turn\x12\x12\n\x04role\x18\x01 \x01(\tR\x04role\x12\x18\n\x07\x63ontent\x18\x02 \x01(\tR\x07\x63ontent\"\x92\x01\n\x0e\x41nswerResponse\x12\x33\n\x07sources\x18\x01 \x01(\x0b\x32\x17.enclave.rag.v1.SourcesH\x00R\x07sources\x12\x16\n\x05\x64\x65lta\x18\x02 \x01(\tH\x00R\x05\x64\x65lta\x12*\n\x04\x64one\x18\x03 \x01(\x0b\x32\x14.enclave.rag.v1.DoneH\x00R\x04\x64oneB\x07\n\x05\x65vent\";\n\x07Sources\x12\x30\n\x07sources\x18\x01 \x03(\x0b\x32\x16.enclave.rag.v1.SourceR\x07sources\"\x9f\x01\n\x06Source\x12\x16\n\x06number\x18\x01 \x01(\x05R\x06number\x12\x1f\n\x0b\x64ocument_id\x18\x02 \x01(\tR\ndocumentId\x12\x14\n\x05title\x18\x03 \x01(\tR\x05title\x12\x12\n\x04page\x18\x04 \x01(\x05R\x04page\x12\x18\n\x07section\x18\x05 \x01(\tR\x07section\x12\x18\n\x07snippet\x18\x06 \x01(\tR\x07snippet\"\x1c\n\x04\x44one\x12\x14\n\x05\x63ited\x18\x01 \x03(\x05R\x05\x63ited2\x9a\x01\n\nRagService\x12\x41\n\x04Ping\x12\x1b.enclave.rag.v1.PingRequest\x1a\x1c.enclave.rag.v1.PingResponse\x12I\n\x06\x41nswer\x12\x1d.enclave.rag.v1.AnswerRequest\x1a\x1e.enclave.rag.v1.AnswerResponse0\x01\x42%Z#enclave/gen/go/enclave/rag/v1;ragv1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -36,6 +36,18 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_PINGREQUEST']._serialized_end=83
   _globals['_PINGRESPONSE']._serialized_start=85
   _globals['_PINGRESPONSE']._serialized_end=151
-  _globals['_RAGSERVICE']._serialized_start=153
-  _globals['_RAGSERVICE']._serialized_end=232
+  _globals['_ANSWERREQUEST']._serialized_start=154
+  _globals['_ANSWERREQUEST']._serialized_end=347
+  _globals['_TURN']._serialized_start=349
+  _globals['_TURN']._serialized_end=401
+  _globals['_ANSWERRESPONSE']._serialized_start=404
+  _globals['_ANSWERRESPONSE']._serialized_end=550
+  _globals['_SOURCES']._serialized_start=552
+  _globals['_SOURCES']._serialized_end=611
+  _globals['_SOURCE']._serialized_start=614
+  _globals['_SOURCE']._serialized_end=773
+  _globals['_DONE']._serialized_start=775
+  _globals['_DONE']._serialized_end=803
+  _globals['_RAGSERVICE']._serialized_start=806
+  _globals['_RAGSERVICE']._serialized_end=960
 # @@protoc_insertion_point(module_scope)

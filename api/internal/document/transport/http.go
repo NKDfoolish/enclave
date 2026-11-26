@@ -44,16 +44,20 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, requireAuth httpserver.Midd
 }
 
 type documentResponse struct {
-	ID            string    `json:"id"`
-	Title         string    `json:"title"`
-	Filename      string    `json:"filename"`
-	ContentType   string    `json:"content_type"`
-	SizeBytes     int64     `json:"size_bytes"`
-	Visibility    string    `json:"visibility"`
-	Status        string    `json:"status"`
-	FailureReason string    `json:"failure_reason,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID            string `json:"id"`
+	Title         string `json:"title"`
+	Filename      string `json:"filename"`
+	ContentType   string `json:"content_type"`
+	SizeBytes     int64  `json:"size_bytes"`
+	Visibility    string `json:"visibility"`
+	Status        string `json:"status"`
+	FailureReason string `json:"failure_reason,omitempty"`
+	// IndexStatus is "pending", "indexed" or "failed" once the document is ready, and
+	// omitted before: whether questions can find the document yet.
+	IndexStatus string    `json:"index_status,omitempty"`
+	IndexError  string    `json:"index_error,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 func newDocumentResponse(d domain.Document) documentResponse {
@@ -66,6 +70,8 @@ func newDocumentResponse(d domain.Document) documentResponse {
 		Visibility:    string(d.Visibility),
 		Status:        string(d.Status),
 		FailureReason: d.FailureReason,
+		IndexStatus:   string(d.Index),
+		IndexError:    d.IndexError,
 		CreatedAt:     d.CreatedAt,
 		UpdatedAt:     d.UpdatedAt,
 	}

@@ -8,6 +8,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
@@ -38,7 +39,7 @@ func newTestClient(t *testing.T, srv ragv1.RagServiceServer) *Client {
 	go func() { _ = s.Serve(lis) }()
 	t.Cleanup(s.Stop)
 
-	c, err := New("passthrough:///bufnet", grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+	c, err := New("passthrough:///bufnet", "test-secret", grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 		return lis.DialContext(ctx)
 	}))
 	if err != nil {
@@ -67,5 +68,20 @@ func TestPingTimesOut(t *testing.T) {
 	_, err := c.Ping(context.Background(), "slow")
 	if status.Code(err) != codes.DeadlineExceeded {
 		t.Fatalf("want DeadlineExceeded, got %v", err)
+	}
+}
+
+func (f *fakeRag) Answer(_ *ragv1.AnswerRequest, stream grpc.ServerStreamingServer[ragv1.AnswerResponse]) error {
+	tokens := metadata.ValueFromIncomingContext(stream.Context(), "authorization")
+	if len(tokens) != 1 || tokens[0] != "Bearer test-secret" {
+		return status.Error(codes.Unauthenticated, "missing service credential")
+	}
+	return nil
+}
+
+func TestAnswerAuthenticatesCoreAPI(t *testing.T) {
+	c := newTestClient(t, &fakeRag{})
+	if err := c.Answer(context.Background(), &ragv1.AnswerRequest{}, func(*ragv1.AnswerResponse) error { return nil }); err != nil {
+		t.Fatal(err)
 	}
 }

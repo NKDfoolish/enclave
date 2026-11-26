@@ -52,11 +52,12 @@ type Repository interface {
 	Get(ctx context.Context, workspaceID, documentID uuid.UUID) (domain.Document, error)
 	GetByID(ctx context.Context, documentID uuid.UUID) (domain.Document, error)
 	List(ctx context.Context, query ListQuery) ([]domain.Document, error)
-	UpdateDetails(ctx context.Context, workspaceID, documentID uuid.UUID, title string, visibility domain.Visibility) (domain.Document, error)
+	UpdateDetails(ctx context.Context, workspaceID, documentID uuid.UUID, title string, visibility domain.Visibility, syncIndex outbox.Job) (domain.Document, error)
 	MarkProcessing(ctx context.Context, workspaceID, documentID uuid.UUID, validate outbox.Job) error
-	MarkReady(ctx context.Context, documentID uuid.UUID, sha256 []byte) error
+	MarkReady(ctx context.Context, documentID uuid.UUID, sha256 []byte, syncIndex outbox.Job) error
 	MarkFailed(ctx context.Context, documentID uuid.UUID, reason string, cleanup outbox.Job) error
-	Delete(ctx context.Context, workspaceID, documentID uuid.UUID, cleanup outbox.Job) error
+	Delete(ctx context.Context, workspaceID, documentID uuid.UUID, deleteFile, syncIndex outbox.Job) error
+	InWorkspace(ctx context.Context, workspaceID uuid.UUID, ids []uuid.UUID) ([]domain.Document, error)
 	AbandonedUploads(ctx context.Context, createdBefore time.Time, limit int) ([]domain.Document, error)
 	DeleteAbandonedUpload(ctx context.Context, documentID uuid.UUID, cleanup outbox.Job) error
 }
@@ -70,16 +71,23 @@ type ListQuery struct {
 	Limit           int
 }
 
+// SearchIndex tells the RAG service that a document changed. It only carries the document
+// ID: the RAG service reads the document's current state itself.
+type SearchIndex interface {
+	RequestSync(ctx context.Context, documentID uuid.UUID) error
+}
+
 type Service struct {
 	memberships Memberships
 	repo        Repository
 	store       ObjectStore
+	searchIndex SearchIndex
 	maxBytes    int64
 	now         func() time.Time
 }
 
-func NewService(memberships Memberships, repo Repository, store ObjectStore, maxBytes int64) *Service {
-	return &Service{memberships: memberships, repo: repo, store: store, maxBytes: maxBytes, now: time.Now}
+func NewService(memberships Memberships, repo Repository, store ObjectStore, searchIndex SearchIndex, maxBytes int64) *Service {
+	return &Service{memberships: memberships, repo: repo, store: store, searchIndex: searchIndex, maxBytes: maxBytes, now: time.Now}
 }
 
 type CreateUploadInput struct {
@@ -276,7 +284,11 @@ func (s *Service) Update(ctx context.Context, caller authn.Principal, workspaceI
 		}
 	}
 
-	updated, err := s.repo.UpdateDetails(ctx, workspaceID, documentID, title, visibility)
+	syncJob, err := syncSearchIndexJob(documentID)
+	if err != nil {
+		return domain.Document{}, err
+	}
+	updated, err := s.repo.UpdateDetails(ctx, workspaceID, documentID, title, visibility, syncJob)
 	if err != nil {
 		return domain.Document{}, fmt.Errorf("update document %s: %w", documentID, err)
 	}
@@ -293,11 +305,15 @@ func (s *Service) Delete(ctx context.Context, caller authn.Principal, workspaceI
 	if err != nil {
 		return err
 	}
-	job, err := deleteObjectJob(doc.StorageKey)
+	deleteFile, err := deleteObjectJob(doc.StorageKey)
 	if err != nil {
 		return err
 	}
-	if err := s.repo.Delete(ctx, workspaceID, documentID, job); err != nil {
+	syncIndex, err := syncSearchIndexJob(documentID)
+	if err != nil {
+		return err
+	}
+	if err := s.repo.Delete(ctx, workspaceID, documentID, deleteFile, syncIndex); err != nil {
 		return fmt.Errorf("delete document %s: %w", documentID, err)
 	}
 	return nil
@@ -340,4 +356,25 @@ func cleanTitle(title, filename string) (string, error) {
 
 func invalidInput(message string) error {
 	return fmt.Errorf("%w: %s", domain.ErrInvalidInput, message)
+}
+
+// Readable reports which of ids a member with role can read right now: the document exists
+// in the workspace, its content passed the check, and its visibility allows the role. The
+// chat context asks this before showing an earlier answer, so answers drawn from a document
+// the user has since lost access to are hidden.
+func (s *Service) Readable(ctx context.Context, workspaceID uuid.UUID, role workspacedomain.Role, ids []uuid.UUID) (map[uuid.UUID]bool, error) {
+	readable := make(map[uuid.UUID]bool, len(ids))
+	if len(ids) == 0 {
+		return readable, nil
+	}
+	docs, err := s.repo.InWorkspace(ctx, workspaceID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("load documents of workspace %s: %w", workspaceID, err)
+	}
+	for _, doc := range docs {
+		if doc.IsVisibleTo(role) && doc.IsDownloadable() {
+			readable[doc.ID] = true
+		}
+	}
+	return readable, nil
 }

@@ -241,3 +241,27 @@ func TestEmbed(t *testing.T) {
 		}
 	})
 }
+
+func TestJSONOutputAndTopPAreForwarded(t *testing.T) {
+	var got map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+	req := question()
+	topP := 0.9
+	req.TopP = &topP
+	req.JSONOutput = true
+
+	stream, err := newClient(server, "").StreamChat(context.Background(), "m", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = stream.Close()
+
+	format, _ := got["response_format"].(map[string]any)
+	if format["type"] != "json_object" || got["top_p"] != 0.9 {
+		t.Fatalf("request = %v", got)
+	}
+}

@@ -19,7 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	RagService_Ping_FullMethodName = "/enclave.rag.v1.RagService/Ping"
+	RagService_Ping_FullMethodName   = "/enclave.rag.v1.RagService/Ping"
+	RagService_Answer_FullMethodName = "/enclave.rag.v1.RagService/Answer"
 )
 
 // RagServiceClient is the client API for RagService service.
@@ -27,9 +28,16 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // RagService answers questions from permitted workspace documents.
-// Part 0 only exposes Ping to prove the Go -> Python gRPC path works.
+//
+// The Core API calls it after checking the user's membership; it passes the workspace and the
+// document visibilities the user may read. The RAG service never decides access by itself: it
+// filters by these values and re-checks every retrieved document against Postgres.
 type RagServiceClient interface {
+	// Ping proves the Go -> Python gRPC path works.
 	Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error)
+	// Answer streams an answer: first the sources found, then the text as the model writes it,
+	// then which sources the answer cited.
+	Answer(ctx context.Context, in *AnswerRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[AnswerResponse], error)
 }
 
 type ragServiceClient struct {
@@ -50,14 +58,40 @@ func (c *ragServiceClient) Ping(ctx context.Context, in *PingRequest, opts ...gr
 	return out, nil
 }
 
+func (c *ragServiceClient) Answer(ctx context.Context, in *AnswerRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[AnswerResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &RagService_ServiceDesc.Streams[0], RagService_Answer_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[AnswerRequest, AnswerResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type RagService_AnswerClient = grpc.ServerStreamingClient[AnswerResponse]
+
 // RagServiceServer is the server API for RagService service.
 // All implementations must embed UnimplementedRagServiceServer
 // for forward compatibility.
 //
 // RagService answers questions from permitted workspace documents.
-// Part 0 only exposes Ping to prove the Go -> Python gRPC path works.
+//
+// The Core API calls it after checking the user's membership; it passes the workspace and the
+// document visibilities the user may read. The RAG service never decides access by itself: it
+// filters by these values and re-checks every retrieved document against Postgres.
 type RagServiceServer interface {
+	// Ping proves the Go -> Python gRPC path works.
 	Ping(context.Context, *PingRequest) (*PingResponse, error)
+	// Answer streams an answer: first the sources found, then the text as the model writes it,
+	// then which sources the answer cited.
+	Answer(*AnswerRequest, grpc.ServerStreamingServer[AnswerResponse]) error
 	mustEmbedUnimplementedRagServiceServer()
 }
 
@@ -70,6 +104,9 @@ type UnimplementedRagServiceServer struct{}
 
 func (UnimplementedRagServiceServer) Ping(context.Context, *PingRequest) (*PingResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Ping not implemented")
+}
+func (UnimplementedRagServiceServer) Answer(*AnswerRequest, grpc.ServerStreamingServer[AnswerResponse]) error {
+	return status.Errorf(codes.Unimplemented, "method Answer not implemented")
 }
 func (UnimplementedRagServiceServer) mustEmbedUnimplementedRagServiceServer() {}
 func (UnimplementedRagServiceServer) testEmbeddedByValue()                    {}
@@ -110,6 +147,17 @@ func _RagService_Ping_Handler(srv interface{}, ctx context.Context, dec func(int
 	return interceptor(ctx, in, info, handler)
 }
 
+func _RagService_Answer_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(AnswerRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(RagServiceServer).Answer(m, &grpc.GenericServerStream[AnswerRequest, AnswerResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type RagService_AnswerServer = grpc.ServerStreamingServer[AnswerResponse]
+
 // RagService_ServiceDesc is the grpc.ServiceDesc for RagService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -122,6 +170,12 @@ var RagService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _RagService_Ping_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "Answer",
+			Handler:       _RagService_Answer_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "enclave/rag/v1/rag.proto",
 }

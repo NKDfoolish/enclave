@@ -3,8 +3,9 @@
 //
 //   - system instructions are a separate field, not a message;
 //   - max_tokens is required;
-//   - sampling parameters such as temperature are rejected by current models, so they are
+//   - sampling parameters (temperature, top_p) are rejected by current models, so they are
 //     not forwarded;
+//   - there is no JSON response format, so JSON output is asked for in the system prompt;
 //   - the stream is a sequence of typed events (message_start, content_block_delta,
 //     message_delta, ...), and token usage arrives at the start and the end of it.
 package anthropic
@@ -28,6 +29,9 @@ import (
 // defaultMaxTokens is used when the caller does not set max_tokens, which Anthropic requires.
 // It is a ceiling, not a target: a short answer still costs only what it uses.
 const defaultMaxTokens = 16_000
+
+// jsonInstruction stands in for OpenAI's json_object response format.
+const jsonInstruction = "Respond with a single JSON object and nothing else: no prose, no code fences."
 
 type Options struct {
 	Provider   string
@@ -74,6 +78,9 @@ func (c *Client) StreamChat(ctx context.Context, model string, req domain.ChatRe
 		case domain.RoleAssistant:
 			params.Messages = append(params.Messages, sdk.NewAssistantMessage(sdk.NewTextBlock(message.Content)))
 		}
+	}
+	if req.JSONOutput {
+		system = append(system, jsonInstruction)
 	}
 	if len(system) > 0 {
 		params.System = []sdk.TextBlockParam{{Text: strings.Join(system, "\n\n")}}

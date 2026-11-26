@@ -59,6 +59,41 @@ type Document struct {
 	UploadedBy    uuid.UUID
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+	// Index is how far the RAG service is with making the document searchable.
+	Index      IndexStatus
+	IndexError string
+}
+
+// IndexStatus says whether a ready document can be found by questions yet.
+type IndexStatus string
+
+const (
+	IndexNone    IndexStatus = ""        // not ready, so never indexed
+	IndexPending IndexStatus = "pending" // ready; the RAG service has not finished yet
+	IndexDone    IndexStatus = "indexed"
+	IndexFailed  IndexStatus = "failed" // e.g. a scanned PDF with no text
+)
+
+// IndexStatusOf combines the document's status with what the RAG service recorded
+// (recorded is "" when it has recorded nothing yet).
+func IndexStatusOf(status Status, recorded string) IndexStatus {
+	switch {
+	case status != StatusReady:
+		return IndexNone
+	case recorded == "":
+		return IndexPending
+	default:
+		return IndexStatus(recorded)
+	}
+}
+
+// SearchableVisibilities lists the visibilities a member with role may search and read.
+// It must agree with IsVisibleTo: the RAG service filters its search with this list.
+func SearchableVisibilities(role workspacedomain.Role) []Visibility {
+	if CanManage(role) {
+		return []Visibility{VisibilityInternal, VisibilityClientCommon}
+	}
+	return []Visibility{VisibilityClientCommon}
 }
 
 // CanManage covers uploading, renaming, sharing and deleting documents.

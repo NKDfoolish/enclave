@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	chatapp "enclave/api/internal/chat/app"
+	chatinfra "enclave/api/internal/chat/infra"
 	"enclave/api/internal/config"
 	documentapp "enclave/api/internal/document/app"
 	documentinfra "enclave/api/internal/document/infra"
@@ -65,7 +67,7 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
-	rag, err := ragclient.New(cfg.RAGAddr)
+	rag, err := ragclient.New(cfg.RAGAddr, cfg.RAGServiceToken)
 	if err != nil {
 		return err
 	}
@@ -76,7 +78,8 @@ func run(logger *slog.Logger) error {
 	}()
 
 	workspaces := workspaceapp.NewService(workspaceinfra.NewRepository(pool))
-	documents := documentapp.NewService(workspaces, documentinfra.NewRepository(pool), store, cfg.MaxDocumentBytes)
+	documents := documentapp.NewService(workspaces, documentinfra.NewRepository(pool), store,
+		documentinfra.NewSearchIndex(redisClient), cfg.MaxDocumentBytes)
 	svc := services{
 		identity: identityapp.NewService(
 			identityinfra.NewRepository(pool),
@@ -89,6 +92,7 @@ func run(logger *slog.Logger) error {
 		),
 		workspace: workspaces,
 		document:  documents,
+		chat:      chatapp.NewService(workspaces, documents, chatinfra.NewAnswerer(rag), chatinfra.NewRepository(pool)),
 		rag:       rag,
 	}
 
@@ -112,6 +116,7 @@ func run(logger *slog.Logger) error {
 	worker := outbox.NewWorker(pool, logger)
 	worker.Handle(documentapp.JobValidateUpload, documents.ValidateUpload)
 	worker.Handle(documentapp.JobDeleteObject, documents.DeleteObject)
+	worker.Handle(documentapp.JobSyncSearchIndex, documents.SyncSearchIndex)
 	background.Go(func() { worker.Run(ctx) })
 	background.Go(func() {
 		every(ctx, abandonedUploadSweepInterval, func() {
