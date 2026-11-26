@@ -8,14 +8,14 @@ The full plan is in [ENCLAVE_PLAN_EN.md](ENCLAVE_PLAN_EN.md). Notes from each pa
 
 | Path | What it is | Status |
 |---|---|---|
-| `api/` | Core API (Go): accounts, JWT auth, workspaces, roles, document library, AI settings. Layout: [ADR 0001](docs/adr/0001-go-code-structure.md) | Part 3 |
+| `api/` | Core API (Go): accounts, JWT auth, workspaces, roles, document library, AI settings, conversations. Layout: [ADR 0001](docs/adr/0001-go-code-structure.md) | Part 4 |
 | `gateway/` | LLM Gateway (Go): OpenAI-format chat and embeddings over Ollama, NVIDIA NIM and Anthropic, with fallback, rate limits and usage accounting. [ADR 0004](docs/adr/0004-llm-gateway.md) | Part 3 |
 | `internal/platform/` | Go plumbing shared by the services (HTTP server, Postgres, Redis, config, ...) | |
 | `migrations/` | SQL migrations for the shared Postgres database (goose) | |
-| `rag/` | RAG service (Python, gRPC) | Part 0 skeleton |
+| `rag/` | RAG service (Python): gRPC server that answers with citations, ingestion worker that indexes documents into Qdrant, evaluation in `rag/eval/`. [ADR 0005](docs/adr/0005-rag-and-qa.md) | Part 4 |
 | `proto/` | Protobuf contracts between services | `rag.v1` |
 | `gen/go/`, `rag/gen/` | Generated code (`make proto`, committed) | |
-| `web/` | Browser UI (plain HTML/JS, embedded in the API binary) | Part 3 |
+| `web/` | Browser UI (plain HTML/JS, embedded in the API binary) | Part 4 |
 | `mcp/`, `agent/`, `inference/`, `infra/` | Later parts | Not started |
 
 Go services share one module at the repo root (`go.mod`).
@@ -27,7 +27,9 @@ Go 1.25+, [uv](https://docs.astral.sh/uv/), Docker with Compose, [buf](https://b
 ## Getting started
 
 ```bash
-cp .env.example .env   # optional; defaults work unless ports clash
+cp .env.example .env   # first-time setup
+# Generate a shared local service credential for the API and RAG processes.
+printf 'RAG_SERVICE_TOKEN=%s\n' "$(openssl rand -hex 32)" >> .env
 make up                # Postgres :5432, Redis :6380, Qdrant :6333/6334, object storage :9000 (RustFS)
 make setup             # Python dependencies
 make migrate-up
@@ -37,7 +39,23 @@ make smoke             # Go API -> Python RAG over gRPC; gateway starts with the
 
 Run `make help` for all commands. Start the API with `make run-api` and open http://localhost:8080
 to register, create a workspace, invite members, upload documents and choose which external AI
-providers the workspace allows. `make run-rag` starts the RAG service.
+providers the workspace allows.
+
+### Questions and answers
+
+Five processes, each in its own terminal:
+
+```bash
+ollama serve           # local models (see below for the one-time setup)
+make run-gateway       # LLM Gateway :8090
+make run-api           # Core API :8080 and the web UI
+make run-rag           # RAG gRPC server :50051 (answers)
+make run-rag-worker    # RAG ingestion worker (indexes documents)
+```
+
+Upload a document, wait until its status says "searchable", then ask in "Ask the documents".
+`make rag-eval` runs the 42-question evaluation against a sample corpus (add `ARGS=--ragas` for
+Ragas scores); `make rag-reindex` re-queues every document after changing the embedding model.
 
 ### LLM Gateway
 
@@ -95,6 +113,9 @@ Errors look like `{"error": {"code": "...", "message": "...", "request_id": "...
 | `PATCH`, `DELETE` | `/v1/workspaces/{id}/documents/{docID}` | admin, staff (`title`, `visibility`) |
 | `GET` | `/v1/workspaces/{id}/ai-settings` | admin, staff |
 | `PUT` | `/v1/workspaces/{id}/ai-settings` | admin (`external_providers`: which providers outside Enclave may receive content) |
+| `POST`, `GET` | `/v1/workspaces/{id}/conversations` | members (start; list own) |
+| `GET`, `DELETE` | `/v1/workspaces/{id}/conversations/{conversationID}` | the conversation's owner only |
+| `POST` | `/v1/workspaces/{id}/conversations/{conversationID}/messages` | owner: ask; the answer streams as Server-Sent Events (`sources`, `delta`, `done`) |
 
 Non-members get `404` for anything inside a workspace, so workspace IDs cannot be probed.
-Authentication design: [ADR 0002](docs/adr/0002-jwt-authentication.md). Document storage: [ADR 0003](docs/adr/0003-document-storage.md). LLM Gateway: [ADR 0004](docs/adr/0004-llm-gateway.md).
+Authentication design: [ADR 0002](docs/adr/0002-jwt-authentication.md). Document storage: [ADR 0003](docs/adr/0003-document-storage.md). LLM Gateway: [ADR 0004](docs/adr/0004-llm-gateway.md). RAG and Q&A: [ADR 0005](docs/adr/0005-rag-and-qa.md).

@@ -41,9 +41,23 @@
       ]
     },
     {
+      "alias": "chat-judge",
+      "kind": "chat",
+      "routes": [
+        { "provider": "nvidia", "model": "nvidia/nemotron-3.5-lightning-30b-a3b" },
+        { "provider": "ollama", "model": "llama3.2:3b" }
+      ]
+    },
+    {
       "alias": "embed-local",
       "kind": "embedding",
-      "routes": [{ "provider": "ollama", "model": "nomic-embed-text" }]
+      "routes": [
+        {
+          "provider": "ollama",
+          "model": "nomic-embed-text",
+          "input_prefixes": { "query": "search_query: ", "passage": "search_document: " }
+        }
+      ]
     },
     {
       "alias": "embed-nvidia",

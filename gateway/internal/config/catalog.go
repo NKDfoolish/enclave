@@ -35,6 +35,8 @@ type routeConfig struct {
 	Model            string  `json:"model"`
 	InputUSDPerMTok  float64 `json:"input_usd_per_mtok"`
 	OutputUSDPerMTok float64 `json:"output_usd_per_mtok"`
+	// InputPrefixes maps "query" / "passage" to text an embedding model expects in front.
+	InputPrefixes map[string]string `json:"input_prefixes"`
 }
 
 type aliasConfig struct {
@@ -100,6 +102,13 @@ func newCatalog(file catalogFile) (Catalog, error) {
 			if model.Kind == string(domain.KindEmbedding) && !canEmbed(file.Providers, route.Provider) {
 				errs = append(errs, fmt.Errorf("alias %q: provider %q has no embeddings API", model.Alias, route.Provider))
 			}
+			prefixes := map[domain.InputType]string{}
+			for inputType, prefix := range route.InputPrefixes {
+				if inputType != string(domain.InputQuery) && inputType != string(domain.InputPassage) {
+					errs = append(errs, fmt.Errorf("alias %q: input_prefixes keys must be query or passage", model.Alias))
+				}
+				prefixes[domain.InputType(inputType)] = prefix
+			}
 			alias.Routes = append(alias.Routes, domain.Route{
 				Provider: provider,
 				Model:    route.Model,
@@ -107,6 +116,7 @@ func newCatalog(file catalogFile) (Catalog, error) {
 					InputMicroUSDPerMTok:  microUSD(route.InputUSDPerMTok),
 					OutputMicroUSDPerMTok: microUSD(route.OutputUSDPerMTok),
 				},
+				InputPrefixes: prefixes,
 			})
 		}
 		aliases = append(aliases, alias)

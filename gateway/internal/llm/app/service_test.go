@@ -36,6 +36,7 @@ type fakeProvider struct {
 	lastReq  domain.ChatRequest
 	embedErr error
 	vectors  int // how many vectors Embed returns; -1 means one per input
+	embedded []string
 }
 
 func (p *fakeProvider) StreamChat(ctx context.Context, _ string, req domain.ChatRequest) (ChatStream, error) {
@@ -53,6 +54,7 @@ func (p *fakeProvider) StreamChat(ctx context.Context, _ string, req domain.Chat
 func (p *fakeProvider) Embed(_ context.Context, _ string, req domain.EmbeddingRequest) (domain.Embeddings, error) {
 	p.mu.Lock()
 	p.calls++
+	p.embedded = req.Inputs
 	p.mu.Unlock()
 	if p.embedErr != nil {
 		return domain.Embeddings{}, p.embedErr
@@ -576,6 +578,23 @@ func TestEmbed(t *testing.T) {
 		})
 		if _, _, err := h.service.Embed(context.Background(), testCall, req); err == nil {
 			t.Fatal("vectors must line up with inputs, or search would attach them to the wrong chunks")
+		}
+	})
+
+	t.Run("the route's input prefixes reach the provider", func(t *testing.T) {
+		alias := embedAlias(local)
+		alias.Routes[0].InputPrefixes = map[domain.InputType]string{domain.InputQuery: "search_query: "}
+		h := newHarness(t, harnessOptions{
+			aliases:  []domain.Alias{alias},
+			limiter:  allowed(),
+			provider: map[string]*fakeProvider{"local": {vectors: -1}},
+		})
+		query := domain.EmbeddingRequest{Model: "embed-test", Inputs: []string{"refund policy"}, InputType: domain.InputQuery}
+		if _, _, err := h.service.Embed(context.Background(), testCall, query); err != nil {
+			t.Fatal(err)
+		}
+		if got := h.providers["local"].embedded; len(got) != 1 || got[0] != "search_query: refund policy" {
+			t.Fatalf("provider received %q", got)
 		}
 	})
 

@@ -24,8 +24,12 @@ API_JWT_SIGNING_KEY ?= ArYMsSrgfvqvccx//yPDW/ciJ8b8YtFUSFHXVUEtXRQ=
 # The binary defaults are the safe ones; local `make run-api` over plain HTTP relaxes them.
 API_ENABLE_DEBUG_ROUTES ?= true
 API_SECURE_COOKIES ?= false
-# DEVELOPMENT ONLY. Internal services authenticate to the LLM Gateway with these tokens.
-GATEWAY_SERVICE_TOKENS ?= dev=enclave-dev-gateway-token
+# DEVELOPMENT ONLY. Internal services authenticate to the LLM Gateway with these tokens;
+# the RAG service uses the "rag" one.
+GATEWAY_SERVICE_TOKENS ?= dev=enclave-dev-gateway-token,rag=enclave-dev-rag-gateway-token
+RAG_GATEWAY_TOKEN ?= enclave-dev-rag-gateway-token
+QDRANT_URL ?= http://localhost:6333
+TEST_QDRANT_URL ?= $(QDRANT_URL)
 
 # Some machines only have the standalone docker-compose binary.
 COMPOSE := $(shell docker compose version >/dev/null 2>&1 && echo "docker compose" || echo "docker-compose")
@@ -76,7 +80,7 @@ test-db: ## Create the enclave_test database if missing and migrate it
 	$(GOOSE) -dir $(MIGRATIONS_DIR) postgres "$(TEST_DATABASE_URL)" up
 
 ##@ Code
-.PHONY: proto setup lint fmt test smoke bench-gateway run-api run-rag run-gateway
+.PHONY: proto setup lint fmt test smoke bench-gateway run-api run-rag run-rag-worker run-gateway rag-reindex rag-eval
 proto: ## Lint protos and regenerate Go and Python code
 	buf lint
 	buf generate
@@ -100,8 +104,17 @@ test: test-db ## Run Go and Python tests (Go integration tests use enclave_test)
 smoke: ## End-to-end check: Go API calls Python RAG over gRPC
 	./scripts/smoke.sh
 
-run-rag: ## Run the RAG gRPC server
+run-rag: ## Run the RAG gRPC server (answers questions)
 	cd rag && PYTHONPATH=src:gen uv run python -m rag.main
+
+run-rag-worker: ## Run the RAG ingestion worker (indexes documents)
+	cd rag && PYTHONPATH=src:gen uv run python -m rag.worker
+
+rag-reindex: ## Queue every ready document for indexing again (after changing the embedding model)
+	cd rag && PYTHONPATH=src:gen uv run python -m rag.reindex
+
+rag-eval: ## Evaluate Q&A on the sample documents (api, gateway, rag, worker running; ARGS=--ragas)
+	cd rag && PYTHONPATH=src:gen:. uv run --group eval python -m eval.run $(ARGS)
 
 bench-gateway: ## Measure the latency the LLM Gateway adds, with k6 and a fake provider
 	./scripts/bench-gateway.sh

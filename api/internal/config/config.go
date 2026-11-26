@@ -20,7 +20,8 @@ type Config struct {
 	// ShutdownTimeout bounds how long in-flight requests may finish after SIGTERM.
 	ShutdownTimeout time.Duration
 	// RAGAddr is the RAG service gRPC address, e.g. "localhost:50051".
-	RAGAddr string
+	RAGAddr         string
+	RAGServiceToken string
 	// EnableDebugRoutes exposes /v1/debug/* endpoints. Keep false outside local development.
 	EnableDebugRoutes bool
 	// DatabaseURL is the Postgres connection string.
@@ -51,6 +52,7 @@ func Load() (Config, error) {
 	cfg := Config{
 		HTTPAddr:          r.String("API_HTTP_ADDR", ":8080"),
 		ShutdownTimeout:   r.Duration("API_SHUTDOWN_TIMEOUT", 10*time.Second),
+		RAGServiceToken:   r.Required("RAG_SERVICE_TOKEN"),
 		RAGAddr:           r.String("RAG_GRPC_ADDR", "localhost:50051"),
 		EnableDebugRoutes: r.Bool("API_ENABLE_DEBUG_ROUTES", false),
 		DatabaseURL:       r.Required("DATABASE_URL"),

@@ -190,3 +190,26 @@ func TestErrorEventMidStream(t *testing.T) {
 		t.Fatal("an error event must end the stream with an error")
 	}
 }
+
+func TestJSONOutputIsAskedForInTheSystemPrompt(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, messagesStream)
+	}))
+	defer server.Close()
+	req := question()
+	req.JSONOutput = true
+
+	stream, err := newTestClient(server).StreamChat(context.Background(), "claude-opus-5-5", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = stream.Close()
+
+	system, _ := json.Marshal(body["system"])
+	if !strings.Contains(string(system), "single JSON object") || body["response_format"] != nil {
+		t.Fatalf("system = %s", system)
+	}
+}

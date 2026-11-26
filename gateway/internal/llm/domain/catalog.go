@@ -33,6 +33,23 @@ type Route struct {
 	Provider Provider
 	Model    string
 	Price    Price
+	// InputPrefixes are prepended to embedding inputs by input type. Some open embedding models
+	// (nomic-embed-text: "search_query: ", "search_document: ") are trained to expect them and
+	// retrieve worse without; providers do not add them. Empty for models that need none.
+	InputPrefixes map[InputType]string
+}
+
+// PrefixInputs returns inputs with the route's prefix for inputType, or inputs unchanged.
+func (r Route) PrefixInputs(inputs []string, inputType InputType) []string {
+	prefix := r.InputPrefixes[inputType]
+	if prefix == "" {
+		return inputs
+	}
+	prefixed := make([]string, len(inputs))
+	for i, input := range inputs {
+		prefixed[i] = prefix + input
+	}
+	return prefixed
 }
 
 type ModelKind string

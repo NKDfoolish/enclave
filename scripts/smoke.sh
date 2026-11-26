@@ -16,6 +16,7 @@ OBJECTSTORE_SECRET_KEY="${OBJECTSTORE_SECRET_KEY:-enclave-dev-secret}"
 # Throwaway secrets: nothing created by the smoke test outlives this run.
 API_JWT_SIGNING_KEY="${API_JWT_SIGNING_KEY:-$(openssl rand -base64 32)}"
 GATEWAY_TOKEN="smoke-$(openssl rand -hex 16)"
+export RAG_SERVICE_TOKEN="smoke-$(openssl rand -hex 32)"
 mkdir -p bin
 
 pids=()
@@ -40,7 +41,13 @@ wait_ok() {
   return 1
 }
 
-PYTHONPATH=src:gen RAG_GRPC_LISTEN="127.0.0.1:${RAG_PORT}" uv run --quiet --directory rag python -m rag.main &
+# The RAG server connects to Postgres at startup; it calls the gateway only to answer, which
+# the smoke test never asks it to do.
+PYTHONPATH=src:gen RAG_GRPC_LISTEN="127.0.0.1:${RAG_PORT}" \
+  DATABASE_URL="$DATABASE_URL" REDIS_URL="$REDIS_URL" RAG_GATEWAY_TOKEN="smoke-unused" \
+  OBJECTSTORE_ENDPOINT="$OBJECTSTORE_ENDPOINT" OBJECTSTORE_ACCESS_KEY="$OBJECTSTORE_ACCESS_KEY" \
+  OBJECTSTORE_SECRET_KEY="$OBJECTSTORE_SECRET_KEY" \
+  uv run --quiet --directory rag python -m rag.main &
 pids+=($!)
 
 go build -o bin/api ./api/cmd/api

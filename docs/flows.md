@@ -11,6 +11,7 @@ Contents
 - Part 1, accounts and workspaces: [Register](#4-register) · [Login](#5-login) · [Authenticated request](#6-authenticated-request) · [Refresh tokens](#7-refresh-tokens) · [Logout](#8-logout) · [Create workspace](#9-create-workspace) · [Invite a member](#10-invite-a-member) · [Accept an invitation](#11-accept-an-invitation) · [Change role or remove a member](#12-change-role-or-remove-a-member)
 - Part 2, document library: [Upload](#13-upload-a-document) · [Content check](#14-content-check-background) · [List](#15-list-documents) · [Download](#16-download-a-document) · [Share and unshare](#17-share-and-unshare) · [Delete](#18-delete-a-document) · [Abandoned uploads](#19-abandoned-upload-sweep) · [Outbox worker](#20-outbox-worker)
 - Part 3, LLM Gateway: [Gateway startup](#21-gateway-startup) · [Streamed chat](#22-streamed-chat-completion) · [Fallback before output](#23-fallback-before-output) · [Failure after output began](#24-failure-after-output-began) · [Caller cancels](#25-caller-cancels) · [Embeddings](#26-embeddings) · [Rate limit](#27-rate-limit) · [Change AI settings](#28-change-ai-settings)
+- Part 4, RAG and Q&A: [Document change reaches the index](#29-document-change-reaches-the-index) · [Indexing a document](#30-indexing-a-document) · [Worker failures and retries](#31-worker-failures-and-retries) · [Ask a question](#32-ask-a-question) · [Retrieval and access check](#33-retrieval-and-access-check) · [Earlier answers after access is lost](#34-earlier-answers-after-access-is-lost)
 
 ## Components
 
@@ -21,10 +22,12 @@ flowchart LR
         HTTP["HTTP handlers<br/>+ middleware"]
         Worker["Outbox worker<br/>(goroutine)"]
     end
-    RAG["RAG service<br/>(Python, gRPC)"]
+    RAG["RAG server<br/>(Python, gRPC)"]
+    Ingest["RAG ingestion worker<br/>(Python)"]
     GW["LLM Gateway (Go)<br/>OpenAI-format API"]
-    PG[("Postgres<br/>users, workspaces, documents,<br/>outbox, AI settings, LLM usage")]
-    Redis[("Redis<br/>token revocation list,<br/>gateway rate limits")]
+    PG[("Postgres<br/>users, workspaces, documents,<br/>outbox, AI settings, LLM usage,<br/>search index state, conversations")]
+    Redis[("Redis<br/>token revocation list,<br/>gateway rate limits,<br/>ingestion stream")]
+    Qdrant[("Qdrant<br/>chunk vectors")]
     S3[("Object storage<br/>RustFS / Amazon S3")]
     Local["Local models<br/>Ollama"]
     External["External providers<br/>NVIDIA NIM, Anthropic"]
@@ -37,7 +40,15 @@ flowchart LR
     HTTP -->|"gRPC"| RAG
     Worker --> PG
     Worker -->|"read, delete"| S3
-    RAG -. "chat, embeddings (Part 4)" .-> GW
+    Worker -->|"XADD rag:ingest"| Redis
+    Redis -->|"XREADGROUP"| Ingest
+    Ingest -->|"read document, record index state"| PG
+    Ingest -->|"read file"| S3
+    Ingest -->|"embed passages"| GW
+    Ingest -->|"upsert, delete"| Qdrant
+    RAG -->|"embed question, stream answer"| GW
+    RAG -->|"search"| Qdrant
+    RAG -->|"access re-check"| PG
     GW -->|"AI settings, usage"| PG
     GW -->|"rate limit"| Redis
     GW --> Local
@@ -849,4 +860,192 @@ sequenceDiagram
     API->>PG: INSERT ... ON CONFLICT (workspace_id) DO UPDATE external_providers, updated_by, updated_at
     API-->>B: 200 {external_providers, available_external_providers, updated_at}
     Note over GW,PG: Next model call for this workspace: the gateway reads the new list, so nvidia routes become usable (or, after removal, are skipped at once).
+```
+
+---
+
+## Part 4: RAG and Q&A
+
+The RAG service (`rag/`) runs two processes: the gRPC server that answers and the ingestion
+worker that indexes. The Core API owns access and conversations (`api/internal/chat`). Decisions:
+ADR 0005.
+
+### 29. Document change reaches the index
+
+`api/internal/document/app/jobs.go` (`SyncSearchIndex`), `document/infra/searchindex.go`. A
+document becoming ready, a new title or visibility, and a delete each queue the same outbox job,
+in the same transaction as the change.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant API as Core API
+    participant PG as Postgres
+    participant OW as Outbox worker (Core API)
+    participant R as Redis Stream rag:ingest
+
+    API->>PG: BEGIN, change the document (ready, visibility, delete),<br/>INSERT outbox_jobs(document.sync_search_index, document_id), COMMIT
+    OW->>PG: lease the job (Part 2 outbox)
+    OW->>R: XADD rag:ingest {document_id} (MAXLEN ~100000)
+    alt Redis down
+        R--xOW: error
+        OW->>PG: reschedule with backoff (nothing is lost)
+    else added
+        OW->>PG: DELETE job
+    end
+    Note over R: The message only names the document. The worker reads its current state itself, so duplicates and reordering are harmless.
+```
+
+### 30. Indexing a document
+
+`rag/src/rag/app/indexing.py` (`Indexer.sync`), `rag/src/rag/worker.py`. Reconcile, do not replay.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant W as Ingestion worker
+    participant R as Redis
+    participant PG as Postgres
+    participant S as Object storage
+    participant GW as LLM Gateway
+    participant Q as Qdrant
+
+    W->>R: XAUTOCLAIM (pending over 2 min) else XREADGROUP group indexers, BLOCK 2 s
+    R-->>W: {document_id}, delivery count
+    W->>PG: SELECT document (status, visibility, sha256, workspace)
+    alt missing or not ready
+        W->>Q: delete points of the document
+    else indexed before with the same file, title and embedding model
+        W->>Q: set visibility on its points (title or sharing changed)
+    else needs indexing
+        W->>S: GET file
+        W->>W: parse (PDF pages, DOCX/Markdown headings) → sections → chunks ≤ 1200 chars, 200 overlap
+        W->>GW: POST /v1/embeddings (batches of 32, input_type passage, workspace of the document)
+        GW-->>W: vectors (Ollama nomic-embed-text, prefixed "search_document: ")
+        W->>Q: create collection chunks_embed-local if missing, upsert points (id = uuid5(document, chunk)),<br/>delete chunks beyond the new count
+        W->>PG: SELECT document again
+        alt deleted or unready meanwhile
+            W->>Q: delete points (a stale run never resurrects a document)
+        else visibility changed meanwhile
+            W->>Q: set visibility
+        end
+        W->>PG: UPSERT document_index (indexed, model, sha256, chunk count)
+    end
+    W->>R: XACK
+```
+
+### 31. Worker failures and retries
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant W as Worker A
+    participant W2 as Worker B
+    participant R as Redis
+    participant PG as Postgres
+
+    W->>R: XREADGROUP → message M (delivery 1)
+    alt unreadable file (ParseError), no text, or a permanent gateway error (403 provider not allowed)
+        W->>PG: document_index failed + error (shown in the UI)
+        W->>R: XACK — retrying would not help
+    else gateway, Qdrant or storage unavailable
+        W->>W: leave M pending (no ack)
+        Note over R: After 2 minutes idle, M is claimed again.
+        W2->>R: XAUTOCLAIM min-idle 120 s → M (delivery 2)
+    else worker crashes mid-way
+        Note over W: M stays pending with A's name
+        W2->>R: XAUTOCLAIM → M, same as a retry
+    end
+    alt delivery 5 fails too
+        W2->>PG: document_index failed "gave up after retries"
+        W2->>R: XADD rag:ingest:dead {document_id, error}, XACK M
+    end
+```
+
+### 32. Ask a question
+
+`api/internal/chat/{app,infra,transport}`, `api/internal/ragclient`, `rag/src/rag/transport/grpc_server.py`,
+`rag/src/rag/app/answering.py`. The answer streams end to end; nothing waits for the full text.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Browser
+    participant API as Core API (chat)
+    participant PG as Postgres
+    participant RAG as RAG server
+    participant GW as LLM Gateway
+
+    B->>API: POST /v1/workspaces/{ws}/conversations/{id}/messages {content}
+    API->>PG: caller's role (non-member → 404), conversation owned by caller (else 404)
+    API->>PG: earlier messages, then which source dependencies the caller can read now
+    API->>API: hide answers citing unreadable documents, keep the last 10 visible turns as history
+    API->>PG: INSERT question (sets the conversation title from the first question)
+    API->>RAG: gRPC Answer {workspace, visibilities for the role, question, history, request id}
+    RAG->>RAG: retrieve (section 33)
+    RAG-->>API: sources [{number, document, title, page, section, snippet}]
+    API-->>B: 200 text/event-stream — event: sources
+    alt no source
+        RAG-->>API: delta "not enough information" (question's language), done []
+    else sources found
+        RAG->>GW: POST /v1/chat/completions stream (system rules, history, numbered sources, question)
+        loop as the model writes
+            GW-->>RAG: chunk
+            RAG-->>API: delta
+            API-->>B: event: delta
+        end
+        RAG-->>API: done {cited: [1, 3]}
+    end
+    API->>PG: INSERT answer with the cited sources, grounded = cites any (even if the browser just left)
+    API-->>B: event: done {message}
+    alt browser closes mid-answer
+        B--xAPI: connection closed
+        API->>RAG: cancel gRPC call
+        RAG->>GW: close stream → gateway stops the provider
+        Note over API: Only the question is stored.
+    end
+```
+
+### 33. Retrieval and access check
+
+`rag/src/rag/app/answering.py` (`Answerer.retrieve`), `infra/vectors.py`, `infra/postgres.py`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant RAG as RAG server
+    participant GW as LLM Gateway
+    participant Q as Qdrant
+    participant PG as Postgres
+
+    RAG->>GW: embed (previous question + question), input_type query
+    RAG->>Q: query_points limit 18, filter workspace_id = ws AND visibility IN (visibilities)
+    Q-->>RAG: passages with cosine scores
+    RAG->>RAG: drop scores below RAG_MIN_SCORE (0.6 for embed-local)
+    RAG->>PG: SELECT id, title FROM documents WHERE workspace_id = ws AND id = ANY(found)<br/>AND status = 'ready' AND visibility = ANY(visibilities)
+    RAG->>RAG: drop passages whose document is not returned (unshared or deleted moments ago,<br/>Qdrant not yet updated), keep the top 6, number them 1..n
+    Note over RAG,PG: Postgres is the authority. The vector store filter only narrows the search.
+```
+
+### 34. Earlier answers after access is lost
+
+`api/internal/chat/domain` (`HideUnreadable`), `document/app` (`Readable`).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client's browser
+    participant A as Admin
+    participant API as Core API
+    participant PG as Postgres
+
+    Note over C,API: Earlier, the client asked and got an answer citing "Refund policy" (shared then).
+    A->>API: PATCH document visibility internal
+    API->>PG: update + queue index sync (section 29)
+    C->>API: GET conversation
+    API->>PG: messages and their source dependencies
+    API->>PG: which of those documents can a client read now? (exists, ready, client_common)
+    API-->>C: the answer returned as hidden: no text, no citations
+    C->>API: ask a follow-up
+    API->>API: hidden answers are left out of the history sent to the model
 ```

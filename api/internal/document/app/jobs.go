@@ -18,8 +18,9 @@ import (
 
 // Outbox job kinds handled by this context.
 const (
-	JobValidateUpload = "document.validate_upload"
-	JobDeleteObject   = "document.delete_object"
+	JobValidateUpload  = "document.validate_upload"
+	JobDeleteObject    = "document.delete_object"
+	JobSyncSearchIndex = "document.sync_search_index"
 )
 
 // abandonedUploadAge: an upload URL lives 15 minutes, so after an hour nobody can still be
@@ -36,6 +37,32 @@ type deleteObjectPayload struct {
 
 func deleteObjectJob(storageKey string) (outbox.Job, error) {
 	return outbox.NewJob(JobDeleteObject, deleteObjectPayload{StorageKey: storageKey})
+}
+
+type syncSearchIndexPayload struct {
+	DocumentID uuid.UUID `json:"document_id"`
+}
+
+// syncSearchIndexJob is queued with every change that affects search: a document becoming
+// ready, a new title or visibility, a delete.
+func syncSearchIndexJob(documentID uuid.UUID) (outbox.Job, error) {
+	return outbox.NewJob(JobSyncSearchIndex, syncSearchIndexPayload{DocumentID: documentID})
+}
+
+// SyncSearchIndex is the outbox handler that hands a document change to the RAG service's
+// ingestion queue (a Redis Stream). The outbox makes the hand-over reliable: if Redis is down
+// when the change commits, the job is retried until the message is delivered. Delivering it
+// twice is harmless, since the RAG service reconciles the index with the document's current
+// state rather than replaying instructions.
+func (s *Service) SyncSearchIndex(ctx context.Context, payload json.RawMessage) error {
+	var p syncSearchIndexPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return fmt.Errorf("decode payload: %w", err)
+	}
+	if err := s.searchIndex.RequestSync(ctx, p.DocumentID); err != nil {
+		return fmt.Errorf("request search index sync for document %s: %w", p.DocumentID, err)
+	}
+	return nil
 }
 
 // ValidateUpload is the outbox handler that checks an uploaded file's content. Returning an
@@ -73,7 +100,11 @@ func (s *Service) ValidateUpload(ctx context.Context, payload json.RawMessage) e
 	}
 
 	sum := sha256.Sum256(data)
-	if err := s.repo.MarkReady(ctx, doc.ID, sum[:]); err != nil {
+	syncIndex, err := syncSearchIndexJob(doc.ID)
+	if err != nil {
+		return err
+	}
+	if err := s.repo.MarkReady(ctx, doc.ID, sum[:], syncIndex); err != nil {
 		return fmt.Errorf("mark document %s ready: %w", doc.ID, err)
 	}
 	return nil

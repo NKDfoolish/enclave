@@ -66,8 +66,14 @@ type chatRequest struct {
 	StreamOptions struct {
 		IncludeUsage bool `json:"include_usage"`
 	} `json:"stream_options"`
-	MaxTokens   *int     `json:"max_tokens,omitempty"`
-	Temperature *float64 `json:"temperature,omitempty"`
+	MaxTokens      *int            `json:"max_tokens,omitempty"`
+	Temperature    *float64        `json:"temperature,omitempty"`
+	TopP           *float64        `json:"top_p,omitempty"`
+	ResponseFormat *responseFormat `json:"response_format,omitempty"`
+}
+
+type responseFormat struct {
+	Type string `json:"type"`
 }
 
 // StreamChat always streams, even when the caller wants the whole answer at once: one code
@@ -79,6 +85,10 @@ func (c *Client) StreamChat(ctx context.Context, model string, req domain.ChatRe
 		Stream:      true,
 		MaxTokens:   req.MaxTokens,
 		Temperature: req.Temperature,
+		TopP:        req.TopP,
+	}
+	if req.JSONOutput {
+		body.ResponseFormat = &responseFormat{Type: "json_object"}
 	}
 	body.StreamOptions.IncludeUsage = true
 	for i, message := range req.Messages {

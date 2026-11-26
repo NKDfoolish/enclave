@@ -26,22 +26,37 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
 }
 
+// documentColumns ends with the search index state, read from document_index (written by the
+// RAG service). Subqueries rather than a join, so the same list works in SELECT ... FROM
+// documents and in INSERT/UPDATE ... RETURNING.
 const documentColumns = `id, workspace_id, title, filename, content_type, size_bytes, sha256,
-	storage_key, visibility, status, failure_reason, uploaded_by, created_at, updated_at`
+	storage_key, visibility, status, failure_reason, uploaded_by, created_at, updated_at,
+	(SELECT i.status FROM document_index i WHERE i.document_id = documents.id),
+	(SELECT i.error FROM document_index i WHERE i.document_id = documents.id)`
 
 func scanDocument(row pgx.CollectableRow) (domain.Document, error) {
 	var (
 		doc           domain.Document
 		failureReason *string
 		uploadedBy    uuid.NullUUID // NULL when the uploader's account was deleted
+		indexStatus   *string
+		indexError    *string
 	)
 	err := row.Scan(&doc.ID, &doc.WorkspaceID, &doc.Title, &doc.Filename, &doc.ContentType,
 		&doc.SizeBytes, &doc.SHA256, &doc.StorageKey, &doc.Visibility, &doc.Status,
-		&failureReason, &uploadedBy, &doc.CreatedAt, &doc.UpdatedAt)
+		&failureReason, &uploadedBy, &doc.CreatedAt, &doc.UpdatedAt, &indexStatus, &indexError)
 	if failureReason != nil {
 		doc.FailureReason = *failureReason
 	}
 	doc.UploadedBy = uploadedBy.UUID
+	recorded := ""
+	if indexStatus != nil {
+		recorded = *indexStatus
+	}
+	doc.Index = domain.IndexStatusOf(doc.Status, recorded)
+	if indexError != nil {
+		doc.IndexError = *indexError
+	}
 	return doc, err
 }
 
@@ -113,14 +128,31 @@ func (r *Repository) List(ctx context.Context, q app.ListQuery) ([]domain.Docume
 	return docs, nil
 }
 
-func (r *Repository) UpdateDetails(ctx context.Context, workspaceID, documentID uuid.UUID, title string, visibility domain.Visibility) (domain.Document, error) {
-	return r.queryOne(ctx, `
-		UPDATE documents
-		SET title = $3, visibility = $4, updated_at = now()
-		WHERE workspace_id = $1 AND id = $2
-		RETURNING `+documentColumns,
-		workspaceID, documentID, title, visibility,
-	)
+// UpdateDetails changes the title and visibility and queues the search index update in the
+// same transaction, so an unshare always reaches the index.
+func (r *Repository) UpdateDetails(ctx context.Context, workspaceID, documentID uuid.UUID, title string, visibility domain.Visibility, syncIndex outbox.Job) (domain.Document, error) {
+	var updated domain.Document
+	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			UPDATE documents
+			SET title = $3, visibility = $4, updated_at = now()
+			WHERE workspace_id = $1 AND id = $2
+			RETURNING `+documentColumns,
+			workspaceID, documentID, title, visibility,
+		)
+		if err != nil {
+			return fmt.Errorf("update document: %w", err)
+		}
+		updated, err = pgx.CollectExactlyOneRow(rows, scanDocument)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.ErrNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("scan document: %w", err)
+		}
+		return outbox.Enqueue(ctx, tx, syncIndex)
+	})
+	return updated, err
 }
 
 // MarkProcessing moves an upload to "processing" and queues its content check together.
@@ -140,12 +172,21 @@ func (r *Repository) MarkProcessing(ctx context.Context, workspaceID, documentID
 	})
 }
 
-func (r *Repository) MarkReady(ctx context.Context, documentID uuid.UUID, sha256 []byte) error {
-	_, err := r.pool.Exec(ctx, `
-		UPDATE documents SET status = 'ready', sha256 = $2, updated_at = now()
-		WHERE id = $1 AND status = 'processing'`,
-		documentID, sha256)
-	return err
+// MarkReady records a checked file and queues indexing it for search, in one transaction.
+func (r *Repository) MarkReady(ctx context.Context, documentID uuid.UUID, sha256 []byte, syncIndex outbox.Job) error {
+	return pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `
+			UPDATE documents SET status = 'ready', sha256 = $2, updated_at = now()
+			WHERE id = $1 AND status = 'processing'`,
+			documentID, sha256)
+		if err != nil {
+			return fmt.Errorf("update status: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return nil // already decided by an earlier run
+		}
+		return outbox.Enqueue(ctx, tx, syncIndex)
+	})
 }
 
 // MarkFailed records why a file was rejected and queues deleting it, in one transaction.
@@ -165,9 +206,10 @@ func (r *Repository) MarkFailed(ctx context.Context, documentID uuid.UUID, reaso
 	})
 }
 
-// Delete removes the row, which blocks access at once, and queues deleting the stored file.
-// Both happen in one transaction: there is never a deleted document whose file is forgotten.
-func (r *Repository) Delete(ctx context.Context, workspaceID, documentID uuid.UUID, cleanup outbox.Job) error {
+// Delete removes the row, which blocks access at once, and queues deleting the stored file
+// and the document's search index entries. All happen in one transaction: there is never a
+// deleted document whose file or passages are forgotten.
+func (r *Repository) Delete(ctx context.Context, workspaceID, documentID uuid.UUID, deleteFile, syncIndex outbox.Job) error {
 	return pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `DELETE FROM documents WHERE workspace_id = $1 AND id = $2`, workspaceID, documentID)
 		if err != nil {
@@ -176,8 +218,26 @@ func (r *Repository) Delete(ctx context.Context, workspaceID, documentID uuid.UU
 		if tag.RowsAffected() == 0 {
 			return domain.ErrNotFound
 		}
-		return outbox.Enqueue(ctx, tx, cleanup)
+		if err := outbox.Enqueue(ctx, tx, deleteFile); err != nil {
+			return err
+		}
+		return outbox.Enqueue(ctx, tx, syncIndex)
 	})
+}
+
+// InWorkspace returns the documents among ids that exist in the workspace, in any order.
+func (r *Repository) InWorkspace(ctx context.Context, workspaceID uuid.UUID, ids []uuid.UUID) ([]domain.Document, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+documentColumns+` FROM documents WHERE workspace_id = $1 AND id = ANY($2)`,
+		workspaceID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("select documents: %w", err)
+	}
+	docs, err := pgx.CollectRows(rows, scanDocument)
+	if err != nil {
+		return nil, fmt.Errorf("scan documents: %w", err)
+	}
+	return docs, nil
 }
 
 func (r *Repository) AbandonedUploads(ctx context.Context, createdBefore time.Time, limit int) ([]domain.Document, error) {
